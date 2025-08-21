@@ -1,0 +1,13 @@
+pic
+ENV
+www
+json
+__pycache__
+.idea
+.vscode
+.ropeproject
+.DS_Store
+*.pyc
+*.html
+*.xlsx
+*.csv
