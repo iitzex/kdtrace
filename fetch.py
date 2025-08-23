@@ -100,17 +100,53 @@ def get_eps(sid: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def get_investors(sid: str) -> pd.DataFrame:
+    try:
+        url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/eps/TWS:{sid}:STOCK'
+        url = f'https://marketinfo.api.cnyes.com/mi/api/v1/chipsObserve/3majorInvestors/TWS:{sid}:STOCK'
+
+        filename = f"json/{sid}_investors.json"
+        stock_data = fetch_json(sid, url, params_eps, filename)
+
+        foreignVolume = []
+        domesticVolume = []
+        dealerVolume = []
+        totalVolume = []
+        for i in stock_data["volumeCharting"]:
+            foreignVolume.append(i['foreignVolume'])
+            domesticVolume.append(i['domesticVolume'])
+            dealerVolume.append(i['dealerVolume'])
+            totalVolume.append(i['totalVolume'])
+
+        df_investors = pd.DataFrame({
+            "foreign": foreignVolume,
+            "domestic": domesticVolume,
+            "dealer": dealerVolume,
+            "total": totalVolume,
+        }, index=pd.to_datetime(stock_data["time"], unit="s"))
+        df_investors.index.name = "date"
+
+        return df_investors
+    except Exception as e:
+        print(f"Error fetching Volume data for {sid}: {e}")
+        return pd.DataFrame()
+
+
 if RELOAD:
     print("\t+")
 else:
     print("\t-")
 
 if __name__ == "__main__":
-    # RELOAD = False
-    # sid = "8487"  # Example stock ID
+    RELOAD = True
+    # sid = "2330"  # Example stock ID
     # print(get_revenue(sid))
     # print(get_eps(sid))
     # print(get_profitability(sid))
+    # df = get_investors(sid)
+    # print(df)
 
     for sid, name in get_list("tse"):
         print(sid)
+        df = get_investors(sid)
+        # print(df)

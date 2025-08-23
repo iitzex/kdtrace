@@ -42,10 +42,10 @@ def ma(df: pd.DataFrame) -> pd.DataFrame:
     s = df.close.dropna()
     ma_dict = {
         'w_5': s.rolling(window=5).mean(),
-        'w_10': s.rolling(window=10).mean(),
         'w_20': s.rolling(window=20).mean(),
         'w_60': s.rolling(window=60).mean(),
-        'w_120': s.rolling(window=120).mean()
+        'w_120': s.rolling(window=120).mean(),
+        'w_250': s.rolling(window=250).mean()
     }
     return pd.DataFrame(ma_dict)
 
