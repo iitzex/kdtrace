@@ -59,7 +59,6 @@ def drawing(
     x1 = plt.subplot2grid((6, 2), (2, 0))
     x2 = plt.subplot2grid((6, 2), (3, 0))
     x3 = plt.subplot2grid((6, 2), (4, 0), rowspan=2)
-    # x4 = plt.subplot2grid((6, 2), (5, 0))
     y0 = plt.subplot2grid((6, 2), (0, 1), rowspan=2)
     y1 = plt.subplot2grid((6, 2), (2, 1), rowspan=2)
     y2 = plt.subplot2grid((6, 2), (4, 1), rowspan=2)
@@ -95,38 +94,25 @@ def drawing(
     df_daily = df_daily.loc[df_daily.index >= begin]
     highK = df_daily[df_daily.k >= 80]
     lowK = df_daily[df_daily.k <= 20]
-    # x2.plot(df_daily.index, df_daily.k, "r", df_daily.index,
-    #         df_daily.d, "c", alpha=0.5, linewidth=1)
-    # x2.plot(highK.index, highK.k, "ro", mec="r", markersize=3)
-    # x2.plot(lowK.index, lowK.k, "go", mec="g", markersize=3)
-    # x2.set_title("日KD", loc="right", fontproperties=font)
 
     df_weekly = df_weekly.loc[df_weekly.index >= begin]
     WhighK = df_weekly[df_weekly.wk >= 80]
     WlowK = df_weekly[df_weekly.wk <= 20]
-    # x3.plot(df_weekly.index, df_weekly.wk, "r", df_weekly.index,
-    #         df_weekly.wd, "c", alpha=0.5, linewidth=1)
-    # x3.plot(WhighK.index, WhighK.wk, "ro", mec="r", markersize=3)
-    # x3.plot(WlowK.index, WlowK.wk, "go", mec="g", markersize=3)
-    # x3.set_title("週KD", loc="right", fontproperties=font)
 
     df_monthly = df_monthly.loc[df_monthly.index >= begin]
     MhighK = df_monthly[df_monthly.mk >= 80]
     MlowK = df_monthly[df_monthly.mk <= 20]
+
     x2.plot(df_daily.index, df_daily.k, "r", df_daily.index,
             df_daily.d, "c", alpha=0.5, linewidth=1)
     x2.scatter(highK.index, highK.k, c="#E87373", s=6)
     x2.scatter(lowK.index, lowK.k, c="#94e9a2", s=6)
     x2.plot(df_weekly.index, df_weekly.wk, "r", df_weekly.index,
             df_weekly.wd, "c", alpha=0.5, linewidth=1)
-    # x2.plot(WhighK.index, WhighK.wk, "ro", mec="r", markersize=3)
-    # x2.plot(WlowK.index, WlowK.wk, "go", mec="g", markersize=3)
     x2.scatter(WhighK.index, WhighK.wk, c="#A50707", s=6)
     x2.scatter(WlowK.index, WlowK.wk, c="#06941e", s=6)
     x2.plot(df_monthly.index, df_monthly.mk, "r", df_monthly.index,
             df_monthly.md, "c", alpha=0.5, linewidth=1)
-    # x2.plot(MhighK.index, MhighK.mk, "ro", mec="r", markersize=3)
-    # x2.plot(MlowK.index, MlowK.mk, "go", mec="g", markersize=3)
     x2.scatter(MhighK.index, MhighK.mk, c="#530303", s=6)
     x2.scatter(MlowK.index, MlowK.mk, c="#02360A", s=6)
     x2.set_title("KD", loc="right", fontproperties=font)
@@ -135,11 +121,12 @@ def drawing(
     x2.get_yaxis().set_visible(False)
     x2.tick_params(colors="w")
 
+    df_investors = df_investors.loc[df_investors.index >= begin]
     x3.bar(df_investors.index, df_investors.total, width=0.4, color="#068ee9")
     x3.bar(df_investors.index, df_investors.foreign,
            width=0.25, color="#0cf5f1")
     x3.get_yaxis().tick_right()
-    x3.set_title(f"法人", loc="right", fontproperties=font)
+    x3.set_title("法人", loc="right", fontproperties=font)
 
     y0.set_title(f"{sid}, {title}    月營收/年增率",
                  loc="right", fontproperties=font)
@@ -279,7 +266,6 @@ if __name__ == "__main__":
     try:
         with open("filter.csv", "w") as f:
             f.write("")
-        f.close()
 
         tse = get_list("tse")
         print(len(tse))

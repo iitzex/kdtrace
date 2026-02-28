@@ -102,33 +102,21 @@ def get_eps(sid: str) -> pd.DataFrame:
 
 def get_investors(sid: str) -> pd.DataFrame:
     try:
-        url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/eps/TWS:{sid}:STOCK'
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/chipsObserve/3majorInvestors/TWS:{sid}:STOCK'
-
         filename = f"json/{sid}_investors.json"
-        stock_data = fetch_json(sid, url, params_eps, filename)
+        stock_data = fetch_json(sid, url, params, filename)
 
-        foreignVolume = []
-        domesticVolume = []
-        dealerVolume = []
-        totalVolume = []
-        for i in stock_data["volumeCharting"]:
-            foreignVolume.append(i['foreignVolume'])
-            domesticVolume.append(i['domesticVolume'])
-            dealerVolume.append(i['dealerVolume'])
-            totalVolume.append(i['totalVolume'])
-
-        df_investors = pd.DataFrame({
-            "foreign": foreignVolume,
-            "domestic": domesticVolume,
-            "dealer": dealerVolume,
-            "total": totalVolume,
-        }, index=pd.to_datetime(stock_data["time"], unit="s"))
+        df_investors = pd.DataFrame(
+            [{"foreign": i['foreignVolume'], "domestic": i['domesticVolume'],
+              "dealer": i['dealerVolume'], "total": i['totalVolume']}
+             for i in stock_data["volumeCharting"]],
+            index=pd.to_datetime(stock_data["time"], unit="s"),
+        )
         df_investors.index.name = "date"
 
         return df_investors
     except Exception as e:
-        print(f"Error fetching Volume data for {sid}: {e}")
+        print(f"Error fetching investors data for {sid}: {e}")
         return pd.DataFrame()
 
 
