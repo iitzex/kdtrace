@@ -92,13 +92,13 @@ class CNYESFetcher:
 
     def get_revenue(self, sid: str) -> pd.DataFrame:
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/revenue/TWS:{sid}:STOCK'
-        params = {'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
+        params = {'year': str(self.config.years_back), 'to': f'{self.to_ts}'}
         data = self.fetch_json(sid, url, params, "revenue")
         return self._to_dataframe(data, {"revenue": "revenue", "revenueYOY": "revenueYOY"})
 
     def get_profitability(self, sid: str) -> pd.DataFrame:
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/profitability/TWS:{sid}:STOCK'
-        params = {'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
+        params = {'year': str(self.config.years_back), 'to': f'{self.to_ts}'}
         data = self.fetch_json(sid, url, params, "profitability")
         return self._to_dataframe(data, {
             "grossMargin": "grossMargin",
@@ -122,7 +122,7 @@ class CNYESFetcher:
 
     def get_investors(self, sid: str) -> pd.DataFrame:
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/chipsObserve/3majorInvestors/TWS:{sid}:STOCK'
-        params = {'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
+        params = {'year': str(self.config.years_back), 'to': f'{self.to_ts}'}
         data = self.fetch_json(sid, url, params, "investors")
         
         if not data or "data" not in data or not data["data"]:
