@@ -44,10 +44,17 @@ class CNYESFetcher:
         return os.path.join(self.config.cache_dir, f"{sid}_{category}.json")
 
     def fetch_json(self, sid: str, url: str, params: Dict[str, Any], category: str) -> Optional[Dict[str, Any]]:
-        """Fetches JSON data with local file caching support."""
+        """Fetches JSON data with local file caching support and 24h expiration."""
         cache_path = self._get_cache_path(sid, category)
         
-        if self.config.reload or not os.path.exists(cache_path):
+        cache_exists = os.path.exists(cache_path)
+        is_stale = False
+        if cache_exists:
+            # Invalidate cache if older than 24 hours
+            if time.time() - os.path.getmtime(cache_path) > 86400:
+                is_stale = True
+        
+        if self.config.reload or not cache_exists or is_stale:
             try:
                 # Using util.get_request which already handles some session-like behavior and SSL issues
                 response = get_request(url, params=params, headers=self.config.headers)

@@ -71,6 +71,11 @@ class StockVisualizer:
         # Filter by display range
         df_disp = df.loc[df.index >= begin_date]
         ma_disp = df_ma.loc[df_ma.index >= begin_date]
+        
+        df_inv = data['df_investors']
+        if not df_inv.empty:
+            df_inv = df_inv.loc[df_inv.index >= pd.Timestamp(begin_date)]
+            df_inv = df_inv.sort_index()
 
         # 1. Price & MA (X0)
         self._plot_price_ma(x0, df_disp, ma_disp)
@@ -82,7 +87,7 @@ class StockVisualizer:
         self._plot_kd(x2, data['df_daily'], data['df_weekly'], data['df_monthly'], begin_date)
 
         # 4. Investors (X3)
-        self._plot_investors(x3, data['df_investors'])
+        self._plot_investors(x3, df_inv)
 
         # 5. Revenue (Y0)
         self._plot_revenue(y0, df, data['df_revenue'], sid, title, data['price'], data['eps4q_sum'])
@@ -119,7 +124,7 @@ class StockVisualizer:
             if col in ma.columns:
                 ax.plot(ma.index, ma[col], color=color, alpha=0.9, linewidth=1.5, zorder=2)
         
-        ax.set_title("Price & MA", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title("Price & MA", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.get_yaxis().tick_right()
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
 
@@ -127,7 +132,7 @@ class StockVisualizer:
         # Case specific: Red for Rise, Green for Fall
         colors = ["#ef4444" if c >= 0 else "#22c55e" for c in df.close.diff().fillna(0)]
         ax.bar(df.index, df.amount, 0.7, color=colors, alpha=0.6, edgecolor="none")
-        ax.set_title("Volume", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title("Volume", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.get_yaxis().tick_right()
         ax.get_xaxis().set_visible(False)
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
@@ -148,7 +153,7 @@ class StockVisualizer:
         ax.plot(d_week.index, d_week.wk, color="#ef4444", linestyle="--", alpha=0.4, linewidth=1)
         ax.plot(d_week.index, d_week.wd, color="#0ea5e9", linestyle="--", alpha=0.4, linewidth=1)
 
-        ax.set_title("KDJ (Daily/Weekly)", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title("KDJ (Daily/Weekly)", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.set_ylim(0, 100)
         ax.axhline(80, color="#e2e8f0", linestyle=":", linewidth=0.8)
         ax.axhline(20, color="#e2e8f0", linestyle=":", linewidth=0.8)
@@ -161,13 +166,13 @@ class StockVisualizer:
             ax.bar(df.index, df.get('totalVolume', 0), width=0.5, color="#0ea5e9", alpha=0.4, label="Total")
             ax.bar(df.index, df.get('foreignVolume', 0), width=0.3, color="#0284c7", alpha=0.8, label="Foreign")
         ax.get_yaxis().tick_right()
-        ax.set_title("Institutional Investors", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title("Institutional Investors", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
 
     def _plot_revenue(self, ax, df_f, df_rev, sid, title, price, eps_sum):
         yield_rate = (eps_sum * 100 / price) if price > 0 else 0
         header = f"{sid}, {title} {price} [{yield_rate:.1f}%]    Revenue Growth"
-        ax.set_title(header, loc="right", fontproperties=self.font, fontsize=10, color="#1e293b", fontweight="bold")
+        ax.set_title(header, loc="right", fontproperties=self.font, fontsize=14, color="#1e293b", fontweight="bold")
         ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=2, zorder=1)
         ax.yaxis.grid(True, linestyle='--', alpha=0.3)
         
@@ -182,7 +187,7 @@ class StockVisualizer:
 
     def _plot_eps(self, ax, df_f, df_eps, eps_sum, price):
         yield_rate = (eps_sum * 100 / price) if price > 0 else 0
-        ax.set_title(f"EPS: {eps_sum:.2f} [{yield_rate:.1f}%]", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title(f"EPS: {eps_sum:.2f} [{yield_rate:.1f}%]", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=1, zorder=1)
         ax.get_yaxis().set_visible(False)
         
@@ -196,7 +201,7 @@ class StockVisualizer:
             q.set_ylim(-40, 150)
 
     def _plot_profitability(self, ax, df_f, df_prof):
-        ax.set_title("Margins (%)", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.set_title("Margins (%)", loc="right", fontproperties=self.font, fontsize=14, color="#64748b")
         ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=1, zorder=1)
         ax.get_yaxis().set_visible(False)
         
