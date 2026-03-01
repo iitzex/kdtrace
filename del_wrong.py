@@ -1,64 +1,95 @@
 import os
 import logging
 import argparse
+from pathlib import Path
+from typing import List, Set
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def trim_csv_files(data_dir: str = "data", count: int = 50, position: str = "last"):
-    """Removes the first or last N records from all CSV files in data_dir, preserving the header."""
-    if not os.path.isdir(data_dir):
+def process_csv_files(data_dir: str = "data", mode: str = "trim", 
+                    count: int = 50, position: str = "last"):
+    """
+    Processes all CSV files in data_dir based on the selected mode.
+    Modes:
+        - trim: Removes first or last N records.
+        - dedup: Removes duplicate date entries (keeps only the first occurrence).
+    """
+    path = Path(data_dir)
+    if not path.is_dir():
         logging.error(f"Directory {data_dir} not found.")
         return
 
-    csv_files = [f for f in os.listdir(data_dir) if f.endswith(".csv")]
-    logging.info(f"Found {len(csv_files)} files in {data_dir}. Trimming {count} records from the {position}...")
+    csv_files = list(path.glob("*.csv"))
+    logging.info(f"Found {len(csv_files)} files. Mode: {mode.upper()}")
 
     processed_count = 0
-    for file_name in csv_files:
-        file_path = os.path.join(data_dir, file_name)
+    modified_count = 0
+
+    for file_path in csv_files:
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with file_path.open("r", encoding="utf-8") as f:
                 lines = f.readlines()
 
             if not lines:
                 continue
 
             header = lines[0]
-            data = lines[1:]
+            data_rows = lines[1:]
             
-            # Trimming logic
-            if position == "last":
-                if len(data) > count:
-                    new_data = data[:-count]
-                else:
-                    new_data = []
-            else: # position == "first"
-                if len(data) > count:
-                    new_data = data[count:]
-                else:
-                    new_data = []
+            new_lines = [header]
+            has_changes = False
 
-            # Combine header back with remaining data
-            final_content = [header] + new_data
-            
-            with open(file_path, "w", encoding="utf-8", newline="") as f:
-                f.writelines(final_content)
+            if mode == "trim":
+                if position == "last":
+                    new_data = data_rows[:-count] if len(data_rows) > count else []
+                else: # position == "first"
+                    new_data = data_rows[count:] if len(data_rows) > count else []
+                
+                if len(new_data) != len(data_rows):
+                    new_lines.extend(new_data)
+                    has_changes = True
+                else:
+                    new_lines.extend(data_rows)
+
+            elif mode == "dedup":
+                seen_dates: Set[str] = set()
+                deduped_data = []
+                for line in data_rows:
+                    # Assuming Date is the first column
+                    parts = line.split(",")
+                    if not parts:
+                        continue
+                    date_val = parts[0].strip()
+                    if date_val not in seen_dates:
+                        seen_dates.add(date_val)
+                        deduped_data.append(line)
+                    else:
+                        has_changes = True
+                
+                new_lines.extend(deduped_data)
+
+            # Save if changes were made
+            if has_changes:
+                with file_path.open("w", encoding="utf-8", newline="") as f:
+                    f.writelines(new_lines)
+                modified_count += 1
             
             processed_count += 1
             if processed_count % 100 == 0:
                 logging.info(f"Processed {processed_count} files...")
 
         except Exception as e:
-            logging.error(f"Error processing {file_name}: {e}")
+            logging.error(f"Error processing {file_path.name}: {e}")
 
-    logging.info(f"Operation complete. Successfully trimmed {processed_count} files.")
+    logging.info(f"Operation complete. Processed {processed_count} files, Modified {modified_count} files.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch trim CSV records from files in a directory.")
-    parser.add_argument("--dir", default="data", help="Directory containing CSV files (default: data)")
-    parser.add_argument("--count", type=int, default=50, help="Number of records to remove (default: 50)")
-    parser.add_argument("--pos", choices=["first", "last"], default="last", help="Remove records from the 'first' or 'last' (default: last)")
+    parser = argparse.ArgumentParser(description="KDTrace Data Repair Tool")
+    parser.add_argument("--dir", default="data", help="Target directory (default: data)")
+    parser.add_argument("--mode", choices=["trim", "dedup"], default="trim", help="Action mode (default: trim)")
+    parser.add_argument("--count", type=int, default=50, help="[Trim mode] Records to remove (default: 50)")
+    parser.add_argument("--pos", choices=["first", "last"], default="last", help="[Trim mode] Position (default: last)")
     
     args = parser.parse_args()
-    trim_csv_files(data_dir=args.dir, count=args.count, position=args.pos)
+    process_csv_files(data_dir=args.dir, mode=args.mode, count=args.count, position=args.pos)

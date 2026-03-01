@@ -33,8 +33,8 @@ class HtmlGenerator:
                 line-height: 1.6;
             }
             .container {
-                width: 80%;
-                max-width: 2560px;
+                width: 90%;
+                max-width: 2800px;
                 margin: 0 auto;
             }
             h1 {
