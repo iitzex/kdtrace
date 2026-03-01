@@ -1,56 +1,52 @@
 import pandas as pd
 import numpy as np
+from typing import Tuple
 
+def calc_kd(df: pd.DataFrame, window: int = 9, k_col: str = 'k', d_col: str = 'd') -> pd.DataFrame:
+    """Calculates Stochastic Oscillator (KD) indicators."""
+    if df.empty:
+        return pd.DataFrame(columns=[k_col, d_col])
 
-def calc_kd(df: pd.DataFrame, window: int, k_col: str, d_col: str) -> pd.DataFrame:
-    low_list = df['low'].rolling(window=window, center=False).min()
-    low_list.fillna(df['low'].expanding(min_periods=1).min(), inplace=True)
-    high_list = df['high'].rolling(window=window, center=False).max()
-    high_list.fillna(df['high'].expanding(min_periods=1).max(), inplace=True)
-    rsv = (df['close'] - low_list) / (high_list - low_list) * 100
+    low_min = df['low'].rolling(window=window).min()
+    low_min = low_min.fillna(df['low'].expanding().min())
+    
+    high_max = df['high'].rolling(window=window).max()
+    high_max = high_max.fillna(df['high'].expanding().max())
+    
+    # RSV calculation
+    denom = high_max - low_min
+    rsv = (df['close'] - low_min) / denom * 100
+    rsv = rsv.fillna(50) # Neutral value for flat lines
+    
+    # EWM with com=2 corresponds to 1/3 smoothing used in common KD
     slowk = rsv.ewm(com=2).mean()
     slowd = slowk.ewm(com=2).mean()
+    
     return pd.concat([slowk, slowd], axis=1, keys=[k_col, d_col])
 
-
-def D_KD(df: pd.DataFrame) -> pd.DataFrame:
-    return calc_kd(df, window=9, k_col='k', d_col='d')
-
-
-def W_KD(df: pd.DataFrame) -> pd.DataFrame:
-    ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-    df_w = df.resample('W-Mon', label='left',
-                       closed='left').apply(ohlc_dict).dropna()
-    return calc_kd(df_w, window=6, k_col='wk', d_col='wd')
-
-
-def M_KD(df: pd.DataFrame) -> pd.DataFrame:
-    ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
-    df_m = df.resample('ME', label='left', closed='left').apply(
-        ohlc_dict).dropna()
-    return calc_kd(df_m, window=6, k_col='mk', d_col='md')
-
-
-def month_mean(df: pd.DataFrame) -> pd.DataFrame:
-    ohlc_dict = {col: np.mean for col in ['open', 'high', 'low', 'close']}
-    df_m = df.resample('M', label='left', closed='left').apply(
-        ohlc_dict).dropna()
-    return df_m
-
-
-def ma(df: pd.DataFrame) -> pd.DataFrame:
+def ma(df: pd.DataFrame, windows: Tuple[int, ...] = (5, 20, 60, 120, 250)) -> pd.DataFrame:
+    """Calculates multiple Moving Averages (MA)."""
+    if 'close' not in df.columns or df.empty:
+        return pd.DataFrame()
+        
     s = df.close.dropna()
-    ma_dict = {
-        'w_5': s.rolling(window=5).mean(),
-        'w_20': s.rolling(window=20).mean(),
-        'w_60': s.rolling(window=60).mean(),
-        'w_120': s.rolling(window=120).mean(),
-        'w_250': s.rolling(window=250).mean()
-    }
-    return pd.DataFrame(ma_dict)
+    ma_dict = {f'w_{w}': s.rolling(window=w).mean() for w in windows}
+    return pd.DataFrame(ma_dict, index=s.index)
 
-
-def kd(df: pd.DataFrame):
-    pd.options.display.float_format = '{:,.2f}'.format
-
-    return D_KD(df), W_KD(df), M_KD(df)
+def kd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Provides KD indicators for Daily, Weekly, and Monthly frequencies."""
+    # Daily KD
+    df_daily = calc_kd(df, window=9, k_col='k', d_col='d')
+    
+    # Resampling helpers
+    ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
+    
+    # Weekly KD
+    df_w = df.resample('W-Mon', label='left', closed='left').apply(ohlc_dict).dropna()
+    df_weekly = calc_kd(df_w, window=6, k_col='wk', d_col='wd')
+    
+    # Monthly KD
+    df_m = df.resample('ME', label='left', closed='left').apply(ohlc_dict).dropna()
+    df_monthly = calc_kd(df_m, window=6, k_col='mk', d_col='md')
+    
+    return df_daily, df_weekly, df_monthly

@@ -1,11 +1,11 @@
 pic
-ENV
 www
 json
 __pycache__
 .idea
 .vscode
 .ropeproject
+.python-version
 .DS_Store
 *.pyc
 *.html

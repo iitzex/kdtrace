@@ -1,75 +1,88 @@
 import json
-import os
 import csv
-from os import listdir
-from os.path import isfile, join
+import logging
+from pathlib import Path
+from typing import List, Tuple, Optional
 
+import requests
+import urllib3
+from urllib3.util.ssl_ import create_urllib3_context
 
-def add_columns():
-    # add columns for data/csv
-    mypath = "data/"
-    onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+# Suppress insecure request warnings when we explicitly use verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    for filename in onlyfiles:
-        with open("data/" + filename, "r") as original:
-            lines = original.readlines()
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-        new_lines = []
-        for line in lines:
-            if "--" not in line:
-                new_lines.append(line)
+class CustomHttpAdapter(requests.adapters.HTTPAdapter):
+    """
+    A custom HTTP adapter that lowers the SSL security level to 1 for legacy sites.
+    """
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        try:
+            context.set_ciphers('DEFAULT@SECLEVEL=1')
+        except Exception:
+            logging.warning("Could not set SECLEVEL=1, falling back to default.")
+        kwargs['ssl_context'] = context
+        return super().init_poolmanager(*args, **kwargs)
 
-        with open("data/" + filename, "w") as modified:
-            modified.writelines(new_lines)
+def get_session() -> requests.Session:
+    """Returns a session with the custom SSL adapter."""
+    session = requests.Session()
+    adapter = CustomHttpAdapter()
+    session.mount('https://', adapter)
+    return session
 
+def get_request(url: str, params: Optional[dict] = None, headers: Optional[dict] = None, 
+                timeout: int = 15, verify: bool = True) -> requests.Response:
+    """
+    A centralized request wrapper that handles SSL SECLEVEL=1 and retries with verify=False
+    for known legacy domain issues.
+    """
+    legacy_domains = ["twse.com.tw", "tpex.org.tw", "isin.twse.com.tw"]
+    
+    session = get_session()
+    try:
+        return session.get(url, params=params, headers=headers, timeout=timeout, verify=verify)
+    except requests.exceptions.SSLError as e:
+        is_legacy = any(domain in url for domain in legacy_domains)
+        is_cert_err = any(err in str(e) for err in ["Missing Subject Key Identifier", "certificate verify failed"])
+        
+        if is_legacy or is_cert_err:
+            logging.warning(f"SSL issue detected for {url}. Retrying with verify=False...")
+            return requests.get(url, params=params, headers=headers, timeout=timeout, verify=False)
+        raise e
 
-def convert_time():
-    all = os.listdir("data/")
-    for _ in all:
-        with open("data/" + _, "r") as fp:
-            tp = open("old/" + _, "w")
-            for i, line in enumerate(fp.readlines()):
-                if i == 0:
-                    tp.write(line.__str__())
+def get_list(name: str, bound: int = 0) -> List[Tuple[str, str]]:
+    """
+    Reads a stock list CSV and returns a list of (sid, title) tuples.
+    """
+    file_path = Path(f"{name}.csv")
+    if not file_path.exists():
+        logging.error(f"Stock list file {file_path} not found.")
+        return []
+
+    stocks = []
+    try:
+        with file_path.open("r", encoding="utf-8") as f:
+            for row in csv.reader(f):
+                if not row or len(row) < 2:
                     continue
-                time = line.split(",")
-                s = time[0].split("/")
-                s[0] = str(int(s[0]) + 1911)
-                t = "-".join(s)
-                time[0] = t
-                tp.write(",".join(time))
-
-
-def get_list(name, bound=0):
-    f = open(name + ".csv", "r")
-
-    r = []
-    for stock in csv.reader(f):
-        sid = stock[0]
-        title = (stock[1]).strip()
-
-        if int(sid) >= int(bound):
-            # yield sid, title
-            r.append((sid, title))
-
-    f.close()
-    return r
-
+                sid = row[0].strip()
+                title = row[1].strip()
+                
+                # Basic validation: ensure sid is numeric and meets bound
+                if sid.isdigit() and int(sid) >= bound:
+                    stocks.append((sid, title))
+    except Exception as e:
+        logging.error(f"Error reading stock list {name}: {e}")
+        
+    return stocks
 
 if __name__ == "__main__":
-    r = get_list("tse")
-    for sid, title in r:
-        print(sid, title)
-        try:
-            with open(f"json/{sid}_eps.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except OSError as e:
-            print(e)
-
-            import fetch
-            fetch.RELOAD = True
-
-            df = fetch.get_revenue(sid)
-            df = fetch.get_eps(sid)
-            df = fetch.get_profitability(sid)
-            print(f"loading {sid}")
+    # Test reading the list
+    tse_list = get_list("tse")
+    logging.info(f"Loaded {len(tse_list)} stocks from tse.csv")
+    if tse_list:
+        logging.info(f"Sample: {tse_list[0]}")

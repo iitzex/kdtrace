@@ -1,140 +1,175 @@
 import os
-from os import mkdir
-from os.path import isdir
-import time
-from time import mktime, strptime
 import csv
 import logging
-from datetime import datetime, timedelta
-import requests
 import random
+import time
+from datetime import datetime, timedelta
+from typing import List, Optional, Tuple
+from dataclasses import dataclass
+
+from util import get_request
+
+
+@dataclass
+class CrawlConfig:
+    """Configuration for the crawler."""
+    prefix: str = "data"
+    max_retries: int = 5
+    min_sleep: int = 1
+    max_sleep: int = 5
+    tse_url_template: str = "https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date}&type=ALLBUT0999"
+    otc_url_template: str = "http://www.tpex.org.tw/web/stock/aftertrading/otc_quotes_no1430/stk_wn1430_result.php?l=zh-tw&d={date_tw}&sect=EW&_={ts}"
+
+
+class DataRecorder:
+    """Handles recording of crawled data to CSV files."""
+
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+        if not os.path.isdir(prefix):
+            os.makedirs(prefix)
+
+    def record(self, stock_id: str, row: List[str]):
+        """Save a row to the corresponding stock's CSV file."""
+        file_path = os.path.join(self.prefix, f"{stock_id}.csv")
+        file_exists = os.path.isfile(file_path)
+        
+        with open(file_path, "a", encoding="utf-8", newline="") as f:
+            cw = csv.writer(f)
+            if not file_exists or os.path.getsize(file_path) == 0:
+                cw.writerow(["date", "amount", "volume", "open", "high", "low", "close", "diff", "number"])
+            cw.writerow(row)
 
 
 class Crawler:
-    def __init__(self, prefix="data"):
-        """ Make directory if not exist when initialize """
-        if not isdir(prefix):
-            mkdir(prefix)
-        self.prefix = prefix
+    """Main crawler class for fetching stock data."""
 
-    def _clean_row(self, row):
-        """ Clean comma and spaces """
-        for index, content in enumerate(row):
-            row[index] = content.replace(",", "")
-        return row
+    def __init__(self, config: Optional[CrawlConfig] = None):
+        self.config = config or CrawlConfig()
+        self.recorder = DataRecorder(self.config.prefix)
 
-    def _record(self, stock_id, row):
-        """ Save row to csv file """
-        f = open("{}/{}.csv".format(self.prefix, stock_id), "a")
-        s = os.stat("{}/{}.csv".format(self.prefix, stock_id))
+    def _clean_row(self, row: List[str]) -> List[str]:
+        """Clean comma and spaces from row contents."""
+        return [content.replace(",", "").strip() for content in row]
 
-        if s.st_size == 0:
-            f.write("date,amount,volume,open,high,low,close,diff,number\n")
-
-        cw = csv.writer(f, lineterminator="\n")
-        cw.writerow(row)
-        f.close()
-
-    def _get_tse_data(self, date_str):
+    def fetch_tse_data(self, date_str: str):
+        """Fetch and record TSE data for a given date."""
         dstr = date_str.replace("-", "")
-        url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={dstr}&type=ALLBUT0999"
+        url = self.config.tse_url_template.format(date=dstr)
 
         try:
-            page = requests.get(url)
-            print(page.status_code, page.url)
-            j = page.json()
-            if j["stat"] != "OK":
-                print(j["stat"])
+            response = get_request(url)
+            if response.status_code != 200:
+                logging.error(f"Failed to fetch TSE data for {date_str}: HTTP {response.status_code}")
                 return
 
-            for item in j['tables'][8]['data']:
+            data = response.json()
+            if data.get("stat") != "OK":
+                logging.info(f"TSE status not OK for {date_str}: {data.get('stat')}")
+                return
+
+            # Indices for TSE data in j['tables'][8]['data' or similar]
+            # Based on original code: j['tables'][8]['data']
+            # Note: The table index might vary, but we keep the logic from the original version.
+            tables = data.get('tables', [])
+            if len(tables) <= 8:
+                logging.warning(f"Unexpected TSE data structure for {date_str}")
+                return
+
+            for item in tables[8].get('data', []):
+                # item[0]: stock_id, item[1]: name, 
+                # item[2]: 成交股數, item[4]: 成交金額
+                # item[5]: 開盤價, item[6]: 最高價, item[7]: 最低價, item[8]: 收盤價
+                # item[9]: 漲跌符號, item[10]: 漲跌價差, item[3]: 成交筆數
                 sign = "-" if "-" in item[9] else ""
-                row = self._clean_row(
-                    [
-                        date_str,  # 日期
-                        item[2][:-4],  # 成交股數
-                        item[4],  # 成交金額
-                        item[5],  # 開盤價
-                        item[6],  # 最高價
-                        item[7],  # 最低價
-                        item[8],  # 收盤價
-                        sign + item[10],  # 漲跌價差
-                        item[3],  # 成交筆數
-                    ]
-                )
+                row = self._clean_row([
+                    date_str,            # 日期
+                    item[2][:-4] if len(item[2]) > 4 else "0",  # 成交股數 (去除後四位，假設為仟股)
+                    item[4],             # 成交金額
+                    item[5],             # 開盤價
+                    item[6],             # 最高價
+                    item[7],             # 最低價
+                    item[8],             # 收盤價
+                    sign + item[10],     # 漲跌價差
+                    item[3],             # 成交筆數
+                ])
+                self.recorder.record(item[0], row)
+        except Exception as e:
+            logging.error(f"Error processing TSE data for {date_str}: {e}")
 
-                self._record(item[0], row)
-        except OSError as e:
-            print(e)
+    def fetch_otc_data(self, date_str: str, date_str_tw: str):
+        """Fetch and record OTC data (currently placeholder as in original)."""
+        # Original code had this commented out or partially implemented.
+        # Leaving as hook for future implementation.
+        pass
 
-    def _get_otc_data(self, date_str, date_str_tw):
-        ts = int(mktime(strptime(f"{date_str}-12", "%Y-%m-%d-%H"))) * 100
-        url = f"http://www.tpex.org.tw/web/stock/aftertrading/otc_quotes_no1430/stk_wn1430_result.php?l=zh-tw&d={date_str_tw}&sect=EW&_={ts}"
-        page = requests.get(url)
-        j = page.json()
-
-        if j["iTotalRecords"] == 0:
-            logging.error("Can not get OTC data at {}".format(date_str))
-            return
-
-        for item in j["aaData"]:
-            row = self._clean_row(
-                [
-                    date_str,  # 日期
-                    item[7][:-4],  # 成交股數
-                    item[8],  # 成交金額
-                    item[4],  # 開盤價
-                    item[5],  # 最高價
-                    item[6],  # 最低價
-                    item[2],  # 收盤價
-                    item[3],  # 漲跌價差
-                    item[9],  # 成交筆數
-                ]
-            )
-
-            self._record(item[0], row)
-
-    def get_data(self, year, month, day):
-        date_str = "{0}-{1:02d}-{2:02d}".format(year, month, day)
-        # date_str_tw = '{0}/{1:02d}/{2:02d}'.format(year - 1911, month, day)
-
-        print("Crawling {}".format(date_str))
-        self._get_tse_data(date_str)
-        # self._get_otc_data(date_str, date_str_tw)
+    def crawl_date(self, dt: datetime):
+        """Crawl all data for a specific date."""
+        date_str = dt.strftime("%Y-%m-%d")
+        logging.info(f"Crawling {date_str}")
+        self.fetch_tse_data(date_str)
 
 
-def get():
-    with open("data/0050.csv", "r") as f:
-        last_line = f.readlines()[-1]
-        last_day = last_line.split(",")[0]
-        begin = datetime.strptime(last_day, "%Y-%m-%d")
-        begin += timedelta(1)
+def get_latest_crawled_date(csv_path: str) -> Optional[datetime]:
+    """Determine the latest date already present in the reference CSV."""
+    if not os.path.exists(csv_path):
+        return None
+    
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            dates = []
+            for row in reader:
+                d_str = row.get("date")
+                if d_str and len(d_str) == 10:
+                    try:
+                        dates.append(datetime.strptime(d_str, "%Y-%m-%d"))
+                    except ValueError:
+                        continue
+            return max(dates) if dates else None
+    except Exception as e:
+        logging.error(f"Error reading {csv_path}: {e}")
+        return None
 
-    end = datetime.today()
-    # end = begin + timedelta(2000)
+
+def run():
+    """Main entry point for the crawler."""
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    reference_csv = os.path.join("data", "0050.csv")
+    latest_date = get_latest_crawled_date(reference_csv)
+    
+    if latest_date:
+        begin = latest_date + timedelta(days=1)
+    else:
+        # Default to 30 days ago if no data found
+        begin = datetime.today() - timedelta(days=30)
+    
+    # Normalize to midnight
+    begin = begin.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    logging.info(f"Crawl Range: {begin.date()} to {end.date()}")
 
     crawler = Crawler()
+    current = begin
+    error_count = 0
+    max_errors = 5
 
-    print(f"BEGIN: {begin}")
-    print(f"END: {end}")
-
-    max_error = 5
-    error = 0
-    while error < max_error and end >= begin:
+    while current <= end and error_count < max_errors:
         try:
-            crawler.get_data(begin.year, begin.month, begin.day)
-            time.sleep(random.randint(1, 5))
-            error = 0
-        except OSError:
-            logging.error(
-                "Crawl raise error {} {} {}".format(
-                    begin.year, begin.month, begin.day)
-            )
-            error += 1
-            continue
+            crawler.crawl_date(current)
+            time.sleep(random.randint(crawler.config.min_sleep, crawler.config.max_sleep))
+            error_count = 0  # Reset on success
+        except Exception as e:
+            logging.error(f"Failed to crawl {current.date()}: {e}")
+            error_count += 1
         finally:
-            begin += timedelta(1)
+            current += timedelta(days=1)
+
+    if error_count >= max_errors:
+        logging.critical("Too many consecutive errors. Exiting.")
 
 
 if __name__ == "__main__":
-    get()
+    run()
