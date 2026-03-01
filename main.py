@@ -15,6 +15,8 @@ from pandas.plotting import register_matplotlib_converters
 plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS'] # For Mac CJK support
 plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['xtick.labelsize'] = 15
+plt.rcParams['ytick.labelsize'] = 15
 register_matplotlib_converters()
 
 # Internal imports
@@ -34,8 +36,6 @@ class StockVisualizer:
 
     def __init__(self):
         self.font = self._set_font()
-        plt.rc("xtick", labelsize=10)
-        plt.rc("ytick", labelsize=10)
 
     def _set_font(self):
         import matplotlib.font_manager as fm
