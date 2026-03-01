@@ -84,7 +84,6 @@ class HtmlGenerator:
                 display: flex;
                 flex-wrap: wrap;
                 gap: 12px;
-                margin-bottom: 20px;
             }
             .links a {
                 color: var(--text-secondary);
@@ -163,15 +162,15 @@ class HtmlGenerator:
             <div class="stock-header-info">
                 <div class="stock-header">
                     <div class="stock-title"><span class="stock-id">{sid}</span>{title}</div>
-                </div>
-                <div class="links">
-                    <a href="https://www.cnyes.com/twstock/{sid}" target="_blank">CNYES</a>
-                    <a href="https://statementdog.com/analysis/{sid}" target="_blank">財報狗</a>
-                    <a href="https://www.wantgoo.com/stock/{sid}" target="_blank">玩股網</a>
-                    <a href="https://goodinfo.tw/StockInfo/StockDetail.asp?STOCK_ID={sid}" target="_blank">Goodinfo</a>
-                    <a href="https://histock.tw/stock/{sid}" target="_blank">HiStock</a>
-                    <a href="https://www.fugle.tw/ai/{sid}" target="_blank">Fugle</a>
-                    <a href="www/{sid}.html">Local Report</a>
+                    <div class="links">
+                        <a href="https://www.cnyes.com/twstock/{sid}" target="_blank">CNYES</a>
+                        <a href="https://statementdog.com/analysis/{sid}" target="_blank">財報狗</a>
+                        <a href="https://www.wantgoo.com/stock/{sid}" target="_blank">玩股網</a>
+                        <a href="https://goodinfo.tw/StockInfo/StockDetail.asp?STOCK_ID={sid}" target="_blank">Goodinfo</a>
+                        <a href="https://histock.tw/stock/{sid}" target="_blank">HiStock</a>
+                        <a href="https://www.fugle.tw/ai/{sid}" target="_blank">Fugle</a>
+                        <a href="www/{sid}.html">Local Report</a>
+                    </div>
                 </div>
             </div>
             <div class="chart-container">
