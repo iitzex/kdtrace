@@ -8,9 +8,14 @@ from multiprocessing import Pool
 from typing import Dict, Any, List, Tuple, Optional
 
 import pandas as pd
-import matplotlib as mpt
 import matplotlib.pyplot as plt
 from pandas.plotting import register_matplotlib_converters
+
+# Use professional styling
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams['font.sans-serif'] = ['Arial Unicode MS'] # For Mac CJK support
+plt.rcParams['axes.unicode_minus'] = False
+register_matplotlib_converters()
 
 # Internal imports
 from fetch import CNYESFetcher, FetchConfig
@@ -29,8 +34,8 @@ class StockVisualizer:
 
     def __init__(self):
         self.font = self._set_font()
-        mpt.rc("xtick", labelsize=10)
-        mpt.rc("ytick", labelsize=10)
+        plt.rc("xtick", labelsize=10)
+        plt.rc("ytick", labelsize=10)
 
     def _set_font(self):
         import matplotlib.font_manager as fm
@@ -99,93 +104,108 @@ class StockVisualizer:
             plt.close()
 
     def _plot_price_ma(self, ax, df, ma):
-        ax.plot(df.index, df.close, "r", alpha=0.5, linewidth=2.5, zorder=1)
-        colors = {"w_5": "#1565c0", "w_20": "#42a5f5", "w_60": "#ffa726", "w_120": "#8e24aa", "w_250": "#757575"}
+        # Professional Red for Price
+        ax.plot(df.index, df.close, color="#ef4444", alpha=0.6, linewidth=2.5, zorder=1)
+        
+        # Harmonized Ocean Blue tones for Moving Averages
+        colors = {
+            "w_5": "#0ea5e9",   # Sky 500
+            "w_20": "#0284c7",  # Sky 700
+            "w_60": "#0c4a6e",  # Sky 900
+            "w_120": "#6366f1", # Indigo 500
+            "w_250": "#94a3b8"  # Slate 400
+        }
         for col, color in colors.items():
             if col in ma.columns:
-                ax.plot(ma.index, ma[col], color, alpha=0.8, linewidth=1.5, zorder=2)
-        ax.set_title("價格/均線", loc="right", fontproperties=self.font)
+                ax.plot(ma.index, ma[col], color=color, alpha=0.9, linewidth=1.5, zorder=2)
+        
+        ax.set_title("Price & MA", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
         ax.get_yaxis().tick_right()
-        ax.yaxis.grid(True)
+        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
 
     def _plot_volume(self, ax, df):
-        ax.bar(df.index, df.amount, 0.7, color="#ffb703", edgecolor="none")
-        ax.set_title("成交量", loc="right", fontproperties=self.font)
+        # Case specific: Red for Rise, Green for Fall
+        colors = ["#ef4444" if c >= 0 else "#22c55e" for c in df.close.diff().fillna(0)]
+        ax.bar(df.index, df.amount, 0.7, color=colors, alpha=0.6, edgecolor="none")
+        ax.set_title("Volume", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
         ax.get_yaxis().tick_right()
         ax.get_xaxis().set_visible(False)
+        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
 
     def _plot_kd(self, ax, daily, weekly, monthly, begin):
         def _get_k_points(df, k_col, thresh_high=80, thresh_low=20):
             d = df.loc[df.index >= begin]
             return d, d[d[k_col] >= thresh_high], d[d[k_col] <= thresh_low]
 
+        # Use Red/Ocean Blue for KD
         d_daily, h_daily, l_daily = _get_k_points(daily, 'k')
-        ax.plot(d_daily.index, d_daily.k, "r", d_daily.index, d_daily.d, "c", alpha=0.5, linewidth=1)
-        ax.scatter(h_daily.index, h_daily.k, c="#F47474", s=6)
-        ax.scatter(l_daily.index, l_daily.k, c="#94e9a2", s=6)
+        ax.plot(d_daily.index, d_daily.k, color="#ef4444", alpha=0.7, linewidth=1.2)
+        ax.plot(d_daily.index, d_daily.d, color="#0ea5e9", alpha=0.7, linewidth=1.2)
+        ax.scatter(h_daily.index, h_daily.k, c="#e11d48", s=8, zorder=3)
+        ax.scatter(l_daily.index, l_daily.k, c="#22c55e", s=8, zorder=3)
 
         d_week, h_week, l_week = _get_k_points(weekly, 'wk')
-        ax.plot(d_week.index, d_week.wk, "r", d_week.index, d_week.wd, "c", alpha=0.5, linewidth=1)
-        ax.scatter(h_week.index, h_week.wk, c="#AA2626", s=6)
-        ax.scatter(l_week.index, l_week.wk, c="#2e933f", s=6)
+        ax.plot(d_week.index, d_week.wk, color="#ef4444", linestyle="--", alpha=0.4, linewidth=1)
+        ax.plot(d_week.index, d_week.wd, color="#0ea5e9", linestyle="--", alpha=0.4, linewidth=1)
 
-        d_month, h_month, l_month = _get_k_points(monthly, 'mk')
-        ax.plot(d_month.index, d_month.mk, "r", d_month.index, d_month.md, "c", alpha=0.5, linewidth=1)
-        ax.scatter(h_month.index, h_month.mk, c="#EF0606", s=6)
-        ax.scatter(l_month.index, l_month.mk, c="#026211", s=6)
-
-        ax.set_title("KD", loc="right", fontproperties=self.font)
+        ax.set_title("KDJ (Daily/Weekly)", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
         ax.set_ylim(0, 100)
+        ax.axhline(80, color="#e2e8f0", linestyle=":", linewidth=0.8)
+        ax.axhline(20, color="#e2e8f0", linestyle=":", linewidth=0.8)
         ax.get_xaxis().set_ticklabels([])
         ax.get_yaxis().set_visible(False)
-        ax.tick_params(colors="w")
 
     def _plot_investors(self, ax, df):
         if not df.empty:
-            ax.bar(df.index, df.get('totalVolume', 0), width=0.4, color="#068ee9")
-            ax.bar(df.index, df.get('foreignVolume', 0), width=0.25, color="#0cf5f1")
+            # Different shades of Ocean Blue
+            ax.bar(df.index, df.get('totalVolume', 0), width=0.5, color="#0ea5e9", alpha=0.4, label="Total")
+            ax.bar(df.index, df.get('foreignVolume', 0), width=0.3, color="#0284c7", alpha=0.8, label="Foreign")
         ax.get_yaxis().tick_right()
-        ax.set_title("法人", loc="right", fontproperties=self.font)
+        ax.set_title("Institutional Investors", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
 
     def _plot_revenue(self, ax, df_f, df_rev, sid, title, price, eps_sum):
         yield_rate = (eps_sum * 100 / price) if price > 0 else 0
-        header = f"{sid}, {title} {price} [{yield_rate:.1f}%]    月營收/年增率"
-        ax.set_title(header, loc="right", fontproperties=self.font)
-        ax.plot(df_f.index, df_f.close, "r", alpha=0.7, linewidth=2, zorder=1)
-        ax.yaxis.grid(True)
+        header = f"{sid}, {title} {price} [{yield_rate:.1f}%]    Revenue Growth"
+        ax.set_title(header, loc="right", fontproperties=self.font, fontsize=10, color="#1e293b", fontweight="bold")
+        ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=2, zorder=1)
+        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
         
         if not df_rev.empty:
             p = ax.twinx()
-            p.bar(df_rev.index, df_rev.revenue, width=15, color="#ecf3f6", edgecolor="#FFA000", alpha=0.7, zorder=3)
+            # Professional Amber Yellow for Revenue
+            p.bar(df_rev.index, df_rev.revenue, width=15, color="#fef3c7", edgecolor="#fbbf24", alpha=0.8, zorder=3)
             q = ax.twinx()
-            q.plot(df_rev.index, df_rev.revenueYOY, "#085dcb", alpha=0.9, zorder=2)
-            q.spines["right"].set_position(("axes", 1.1))
-            q.set_ylim(-40, 60)
+            q.plot(df_rev.index, df_rev.revenueYOY, color="#0ea5e9", linewidth=2, alpha=0.9, zorder=4)
+            q.spines["right"].set_position(("axes", 1.08))
+            q.set_ylim(-40, 100)
 
     def _plot_eps(self, ax, df_f, df_eps, eps_sum, price):
         yield_rate = (eps_sum * 100 / price) if price > 0 else 0
-        ax.set_title(f"{eps_sum:.2f} [{yield_rate:.1f}%] EPS", loc="right", fontproperties=self.font)
-        ax.plot(df_f.index, df_f.close, "r", alpha=0.7, linewidth=1, zorder=1)
+        ax.set_title(f"EPS: {eps_sum:.2f} [{yield_rate:.1f}%]", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=1, zorder=1)
         ax.get_yaxis().set_visible(False)
         
         if not df_eps.empty:
             p = ax.twinx()
-            p.bar(df_eps.index, df_eps.eps, width=40, color="#0cf5f1", edgecolor="#00838f", alpha=0.7, zorder=2)
+            # Amber Yellow palette for EPS
+            p.bar(df_eps.index, df_eps.eps, width=40, color="#fbbf24", edgecolor="#d97706", alpha=0.8, zorder=2)
             q = ax.twinx()
-            q.plot(df_eps.index, df_eps.epsYOY, "#a630ce", alpha=0.9, zorder=1)
-            q.spines["right"].set_position(("axes", 1.1))
-            q.set_ylim(-40, 70)
+            q.plot(df_eps.index, df_eps.epsYOY, color="#6366f1", linewidth=1.5, alpha=0.9, zorder=1)
+            q.spines["right"].set_position(("axes", 1.08))
+            q.set_ylim(-40, 150)
 
     def _plot_profitability(self, ax, df_f, df_prof):
-        ax.set_title("毛利率/營益率/稅後營益率", loc="right", fontproperties=self.font)
-        ax.plot(df_f.index, df_f.close, "r", alpha=0.2, linewidth=1, zorder=1)
+        ax.set_title("Margins (%)", loc="right", fontproperties=self.font, fontsize=10, color="#64748b")
+        ax.plot(df_f.index, df_f.close, color="#ef4444", alpha=0.7, linewidth=1, zorder=1)
         ax.get_yaxis().set_visible(False)
         
         if not df_prof.empty:
             p = ax.twinx()
-            p.plot(df_prof.index, df_prof.get('grossMargin', []), c="g")
-            p.plot(df_prof.index, df_prof.get('operatingMargin', []), c="b")
-            p.plot(df_prof.index, df_prof.get('profitMargin', []), c="c")
+            # Amber tones for Margins
+            p.plot(df_prof.index, df_prof.get('grossMargin', []), color="#f59e0b", linewidth=2, label="Gross")
+            p.plot(df_prof.index, df_prof.get('operatingMargin', []), color="#fbbf24", linewidth=1.5, label="Op")
+            p.plot(df_prof.index, df_prof.get('profitMargin', []), color="#6366f1", linewidth=1, label="Net")
         ax.get_xaxis().set_visible(False)
 
 class StockAnalyzer:
@@ -259,7 +279,7 @@ class StockAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(description="KDTrace Stock Analysis Engine")
-    parser.add_argument("--cores", type=int, default=8, help="Number of CPU cores to use")
+    parser.add_argument("--cores", type=int, default=10, help="Number of CPU cores to use")
     parser.add_argument("--reload", action="store_true", help="Force reload data from CNYES")
     parser.add_argument("--sid", help="Specific stock ID to analyze")
     args = parser.parse_args()

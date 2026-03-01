@@ -20,9 +20,11 @@ class HtmlGenerator:
                 --card-bg: #ffffff;
                 --text-primary: #1e293b;
                 --text-secondary: #64748b;
-                --accent: #0284c7;
-                --accent-hover: #0369a1;
+                --accent: #0ea5e9;
+                --accent-hover: #0284c7;
                 --border: #e2e8f0;
+                --rise: #ef4444;
+                --fall: #22c55e;
             }
             body {
                 font-family: 'Inter', -apple-system, sans-serif;

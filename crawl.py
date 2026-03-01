@@ -134,20 +134,33 @@ def get_latest_crawled_date(csv_path: str) -> Optional[datetime]:
 
 def run():
     """Main entry point for the crawler."""
+    parser = argparse.ArgumentParser(description="KDTrace Stock Data Crawler")
+    parser.add_argument("--begin", help="Begin date (YYYY-MM-DD)")
+    parser.add_argument("--end", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--date", help="Single date to crawl (YYYY-MM-DD)")
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
-    reference_csv = os.path.join("data", "0050.csv")
-    latest_date = get_latest_crawled_date(reference_csv)
-    
-    if latest_date:
-        begin = latest_date + timedelta(days=1)
+    if args.date:
+        begin = datetime.strptime(args.date, "%Y-%m-%d")
+        end = begin
+    elif args.begin:
+        begin = datetime.strptime(args.begin, "%Y-%m-%d")
+        end = datetime.strptime(args.end, "%Y-%m-%d") if args.end else datetime.today()
     else:
-        # Default to 30 days ago if no data found
-        begin = datetime.today() - timedelta(days=30)
-    
+        # Default auto-catchup logic
+        reference_csv = os.path.join("data", "0050.csv")
+        latest_date = get_latest_crawled_date(reference_csv)
+        if latest_date:
+            begin = latest_date + timedelta(days=1)
+        else:
+            begin = datetime.today() - timedelta(days=30)
+        end = datetime.today()
+
     # Normalize to midnight
     begin = begin.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = end.replace(hour=0, minute=0, second=0, microsecond=0)
 
     logging.info(f"Crawl Range: {begin.date()} to {end.date()}")
 
@@ -159,8 +172,9 @@ def run():
     while current <= end and error_count < max_errors:
         try:
             crawler.crawl_date(current)
+            # Random sleep to avoid being blocked
             time.sleep(random.randint(crawler.config.min_sleep, crawler.config.max_sleep))
-            error_count = 0  # Reset on success
+            error_count = 0 
         except Exception as e:
             logging.error(f"Failed to crawl {current.date()}: {e}")
             error_count += 1
@@ -172,4 +186,5 @@ def run():
 
 
 if __name__ == "__main__":
+    import argparse
     run()
