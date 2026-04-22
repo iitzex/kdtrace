@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
-from util import get_request
+from utils import get_request, setup_logger
 
 
 @dataclass
@@ -140,8 +140,8 @@ def run():
     parser.add_argument("--date", help="Single date to crawl (YYYY-MM-DD)")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    
+    setup_logger()
+
     if args.date:
         begin = datetime.strptime(args.date, "%Y-%m-%d")
         end = begin

@@ -23,13 +23,12 @@ register_matplotlib_converters()
 from fetch import CNYESFetcher, FetchConfig
 from indicator import kd, ma
 from gen_html import html_generator
-from util import get_list
+from utils import get_list, setup_logger
 
 # Register converters for matplotlib and pandas
 register_matplotlib_converters()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class StockVisualizer:
     """Handles all plotting logic for stock analysis."""
@@ -283,6 +282,7 @@ class StockAnalyzer:
             logging.error(f"Unexpected error analyzing {sid}: {e}")
 
 def main():
+    setup_logger()
     parser = argparse.ArgumentParser(description="KDTrace Stock Analysis Engine")
     parser.add_argument("--cores", type=int, default=10, help="Number of CPU cores to use")
     parser.add_argument("--reload", action="store_true", help="Force reload data from CNYES")

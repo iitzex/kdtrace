@@ -1,11 +1,11 @@
-import os
 import logging
 import argparse
 from pathlib import Path
-from typing import List, Set
+from typing import Set
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from utils import setup_logger
+
+logger = logging.getLogger(__name__)
 
 def process_csv_files(data_dir: str = "data", mode: str = "trim", 
                     count: int = 50, position: str = "last", stock_id: str = None):
@@ -113,6 +113,7 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
     logging.info(f"Operation complete. Processed {processed_count} files, Modified {modified_count} files.")
 
 if __name__ == "__main__":
+    setup_logger()
     parser = argparse.ArgumentParser(description="KDTrace Data Repair Tool")
     parser.add_argument("--dir", default="data", help="Target directory (default: data)")
     parser.add_argument("--sid", help="Specific stock ID to process")

@@ -2,12 +2,11 @@ import re
 import os
 import logging
 from dataclasses import dataclass
-from typing import List, Set, Tuple, Optional
+from typing import List, Set
 from bs4 import BeautifulSoup, Tag
-from util import get_request
+from utils import get_request, setup_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,6 +115,7 @@ class StockListGenerator:
 
 
 def main():
+    setup_logger()
     generator = StockListGenerator()
     stocks = generator.fetch_stock_list()
     

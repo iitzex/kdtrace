@@ -1,13 +1,12 @@
 import logging
 import argparse
 from multiprocessing import Pool
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 from fetch import CNYESFetcher, FetchConfig
-from util import get_list
+from utils import get_list, setup_logger
 from gen_html import HtmlGenerator
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class StockFilter:
     """Filters stocks based on fundamental criteria with multiprocessing support."""
@@ -67,6 +66,7 @@ class StockFilter:
             logging.error(f"Error saving filter list: {e}")
 
 def main():
+    setup_logger()
     parser = argparse.ArgumentParser(description="KDTrace Fundamental Stock Screener")
     parser.add_argument("--cores", type=int, default=8, help="Number of CPU cores to use")
     parser.add_argument("--source", default="tse", help="Source stock list CSV name (without .csv)")

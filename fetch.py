@@ -3,12 +3,11 @@ import json
 import os
 import logging
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from util import get_list, get_request
+from utils import get_list, get_request, setup_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @dataclass
 class FetchConfig:
@@ -142,6 +141,7 @@ class CNYESFetcher:
             return pd.DataFrame()
 
 def main():
+    setup_logger()
     config = FetchConfig(reload=True)
     fetcher = CNYESFetcher(config)
     

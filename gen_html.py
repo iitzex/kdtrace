@@ -1,9 +1,8 @@
 import logging
 import os
-from util import get_list
+from utils import get_list, setup_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class HtmlGenerator:
     """Generates visual stock reports in HTML format with a premium look."""
@@ -198,4 +197,5 @@ def html_generator():
     generator.generate("tse")
 
 if __name__ == "__main__":
+    setup_logger()
     html_generator()

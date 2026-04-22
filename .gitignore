@@ -6,6 +6,7 @@ __pycache__
 .vscode
 .ropeproject
 .python-version
+.venv
 .DS_Store
 *.pyc
 *.html

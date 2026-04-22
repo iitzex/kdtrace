@@ -1,9 +1,8 @@
 import logging
 import pandas as pd
-from util import get_list, get_request
+from utils import get_list, get_request, setup_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class YieldRateFetcher:
     """Fetches stock yield rate information."""
@@ -40,6 +39,7 @@ class YieldRateFetcher:
             return pd.DataFrame()
 
 def main():
+    setup_logger()
     fetcher = YieldRateFetcher()
     df = fetcher.fetch_data()
     
