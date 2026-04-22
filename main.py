@@ -1,32 +1,30 @@
 import os
-import sys
+import time
 import platform
 import logging
 import argparse
+import statistics
 from datetime import datetime, timedelta
 from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from pandas.plotting import register_matplotlib_converters
 
-# Use professional styling
 plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams['font.sans-serif'] = ['Arial Unicode MS'] # For Mac CJK support
+plt.rcParams['font.sans-serif'] = ['Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['xtick.labelsize'] = 15
 plt.rcParams['ytick.labelsize'] = 15
 register_matplotlib_converters()
 
-# Internal imports
 from fetch import CNYESFetcher, FetchConfig
 from indicator import kd, ma
 from gen_html import html_generator
 from utils import get_list, setup_logger
-
-# Register converters for matplotlib and pandas
-register_matplotlib_converters()
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +45,9 @@ class StockVisualizer:
             return fm.FontProperties(fname=font_path, size=14)
         return fm.FontProperties(size=14)
 
-    def draw_report(self, sid: str, title: str, data: Dict[str, Any], output_path: str):
-        """Main method to draw the comprehensive stock report."""
+    def draw_report(self, sid: str, title: str, data: Dict[str, Any], output_path: str) -> Tuple[float, float]:
+        """繪圖與存檔；回傳 (plot_time, save_time) 以供 profiling。"""
+        t_plot_start = time.perf_counter()
         fig = plt.figure(figsize=(26, 13))
         plt.subplots_adjust(top=0.92, bottom=0.08, left=0.10, right=0.95, hspace=0.15, wspace=0.25)
 
@@ -99,13 +98,17 @@ class StockVisualizer:
 
         fig.subplots_adjust(bottom=0.1, hspace=0.5)
         fig.set_facecolor("white")
-        
+
+        plot_time = time.perf_counter() - t_plot_start
+        t_save_start = time.perf_counter()
         try:
-            plt.savefig(output_path, bbox_inches="tight")
+            plt.savefig(output_path)
         except Exception as e:
             logging.error(f"Error saving plot for {sid}: {e}")
         finally:
             plt.close()
+        save_time = time.perf_counter() - t_save_start
+        return plot_time, save_time
 
     def _plot_price_ma(self, ax, df, ma):
         # Professional Red for Price
@@ -212,49 +215,81 @@ class StockVisualizer:
             p.plot(df_prof.index, df_prof.get('profitMargin', []), color="#6366f1", linewidth=1, label="Net")
         ax.get_xaxis().set_visible(False)
 
+FETCH_CATEGORIES = ("revenue", "eps", "profitability", "investors", "info")
+
+
 class StockAnalyzer:
     """Orchestrates the analysis of multiple stocks."""
 
-    def __init__(self, fetcher: CNYESFetcher, visualizer: StockVisualizer):
+    def __init__(self, fetcher: CNYESFetcher, visualizer: StockVisualizer, force: bool = False):
         self.fetcher = fetcher
         self.visualizer = visualizer
+        self.force = force
         os.makedirs("pic", exist_ok=True)
 
-    def analyze_stock(self, items: Tuple[str, str]):
-        """Complete analysis workflow for a single stock."""
+    def _is_up_to_date(self, sid: str) -> bool:
+        """若 pic/{sid}.png 的 mtime 晚於所有輸入（CSV + JSON cache）→ 可跳過重畫。"""
+        png = Path(f"pic/{sid}.png")
+        if not png.exists():
+            return False
+        png_mtime = png.stat().st_mtime
+
+        data = Path(f"data/{sid}.csv")
+        if not data.exists() or data.stat().st_mtime > png_mtime:
+            return False
+
+        for cat in FETCH_CATEGORIES:
+            j = Path(f"json/{sid}_{cat}.json")
+            if not j.exists() or j.stat().st_mtime > png_mtime:
+                return False
+        return True
+
+    def analyze_stock(self, items: Tuple[str, str]) -> Optional[Dict[str, float]]:
+        """單支股票的完整流程；回傳每階段耗時（秒），用於 profiling。跳過時回傳 {'_skipped': 0.0}。"""
         sid, title = items
+        timings: Dict[str, float] = {}
+
+        if not self.force and self._is_up_to_date(sid):
+            logging.debug(f"Skip {sid} (up-to-date)")
+            return {'_skipped': 0.0}
+
         logging.info(f"Analyzing {sid} {title}...")
 
         try:
-            # 1. Load historical data
             data_path = f"data/{sid}.csv"
             if not os.path.exists(data_path):
                 logging.warning(f"Data file for {sid} missing.")
-                return
+                return None
 
+            t = time.perf_counter()
             df_f = pd.read_csv(data_path, index_col=0, parse_dates=True, date_format='%Y-%m-%d')
             if df_f.empty:
-                return
-
-            # Keep 5 years of daily data
+                return None
             df_f = df_f.iloc[-255 * 5:]
             df_f = df_f.apply(pd.to_numeric, errors="coerce")
+            timings['read_csv'] = time.perf_counter() - t
 
-            # 2. Fetch external data
-            df_rev = self.fetcher.get_revenue(sid)
-            df_eps = self.fetcher.get_eps(sid)
-            df_prof = self.fetcher.get_profitability(sid)
-            df_investors = self.fetcher.get_investors(sid)
-            price = self.fetcher.get_price(sid)
+            # 5 個 CNYES endpoint 併發；每支股票打 5 條獨立檔案／endpoint，無共享寫入
+            t = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                f_rev = ex.submit(self.fetcher.get_revenue, sid)
+                f_eps = ex.submit(self.fetcher.get_eps, sid)
+                f_prof = ex.submit(self.fetcher.get_profitability, sid)
+                f_inv = ex.submit(self.fetcher.get_investors, sid)
+                f_price = ex.submit(self.fetcher.get_price, sid)
+                df_rev = f_rev.result()
+                df_eps = f_eps.result()
+                df_prof = f_prof.result()
+                df_investors = f_inv.result()
+                price = f_price.result()
+            timings['fetch_phase'] = time.perf_counter() - t
 
-            # 3. Calculate indicators
+            t = time.perf_counter()
             df_daily, df_weekly, df_monthly = kd(df_f)
             df_ma = ma(df_f)
+            timings['indicators'] = time.perf_counter() - t
 
-            # 4. Prepare data for plotting
             eps4q_sum = df_eps.eps.head(4).sum() if not df_eps.empty else 0
-            
-            # Display range (approx 300 days)
             num_days = min(300, len(df_f.index))
             begin_date = df_f.index[-1].to_pydatetime() - timedelta(num_days)
             begin_date = datetime(begin_date.year, begin_date.month, 1) - timedelta(1)
@@ -274,12 +309,65 @@ class StockAnalyzer:
                 'begin_date': begin_date
             }
 
-            # 5. Generate visual report
             output_file = f"pic/{sid}.png"
-            self.visualizer.draw_report(sid, title, plot_data, output_file)
+            plot_time, save_time = self.visualizer.draw_report(sid, title, plot_data, output_file)
+            timings['plot'] = plot_time
+            timings['savefig'] = save_time
+
+            return timings
 
         except Exception as e:
             logging.error(f"Unexpected error analyzing {sid}: {e}")
+            return None
+
+STAGE_ORDER = [
+    'read_csv', 'fetch_phase', 'indicators', 'plot', 'savefig',
+]
+
+
+def _print_profile_report(samples: List[Dict[str, float]]):
+    """印 TOON 格式的 per-stage 統計表；分離 processed vs skipped。"""
+    skipped = sum(1 for s in samples if '_skipped' in s)
+    processed = [s for s in samples if '_skipped' not in s]
+
+    logging.info(f"processed={len(processed)} | skipped={skipped}")
+    if not processed:
+        logging.warning("No stocks processed (all skipped or failed).")
+        return
+
+    samples = processed
+    n = len(samples)
+    header = "stage               | n  | mean_ms | median_ms | p95_ms  | total_s | share"
+    lines = [header]
+    totals: Dict[str, float] = {}
+    for stage in STAGE_ORDER:
+        vals = [s[stage] for s in samples if stage in s]
+        if not vals:
+            continue
+        totals[stage] = sum(vals)
+
+    grand_total = sum(totals.values())
+
+    for stage in STAGE_ORDER:
+        vals = sorted(s[stage] for s in samples if stage in s)
+        if not vals:
+            continue
+        mean_ms = statistics.mean(vals) * 1000
+        median_ms = statistics.median(vals) * 1000
+        p95_ms = vals[min(len(vals) - 1, int(len(vals) * 0.95))] * 1000
+        total_s = sum(vals)
+        share = (total_s / grand_total * 100) if grand_total > 0 else 0
+        lines.append(
+            f"{stage:<19} | {len(vals):<2} | {mean_ms:>7.1f} | {median_ms:>9.1f} | "
+            f"{p95_ms:>7.1f} | {total_s:>7.2f} | {share:>4.1f}%"
+        )
+
+    per_stock_total = grand_total / n
+    lines.append(f"{'TOTAL':<19} | {n:<2} | {per_stock_total*1000:>7.1f} | {'-':>9} | "
+                 f"{'-':>7} | {grand_total:>7.2f} | 100.0%")
+
+    print("\n" + "\n".join(lines) + "\n")
+
 
 def main():
     setup_logger()
@@ -287,20 +375,32 @@ def main():
     parser.add_argument("--cores", type=int, default=10, help="Number of CPU cores to use")
     parser.add_argument("--reload", action="store_true", help="Force reload data from CNYES")
     parser.add_argument("--sid", help="Specific stock ID to analyze")
+    parser.add_argument("--profile", type=int, metavar="N",
+                        help="Profile first N stocks sequentially and print per-stage timing")
+    parser.add_argument("--force", action="store_true",
+                        help="Force re-render even if pic/{sid}.png is up-to-date")
     args = parser.parse_args()
 
-    # Initialize components
     fetch_config = FetchConfig(reload=args.reload)
     fetcher = CNYESFetcher(fetch_config)
     visualizer = StockVisualizer()
-    analyzer = StockAnalyzer(fetcher, visualizer)
+    analyzer = StockAnalyzer(fetcher, visualizer, force=args.force)
 
     try:
+        if args.profile:
+            stocks = get_list("tse")[:args.profile]
+            cache_mode = "cold (reload=True)" if args.reload else "warm"
+            logging.info(f"Profiling {len(stocks)} stocks sequentially | cache={cache_mode}")
+            t0 = time.perf_counter()
+            samples = [t for t in (analyzer.analyze_stock(item) for item in stocks) if t]
+            wall = time.perf_counter() - t0
+            logging.info(f"Wall time: {wall:.2f}s | successful samples: {len(samples)}/{len(stocks)}")
+            _print_profile_report(samples)
+            return
+
         if args.sid:
-            # Analyze single stock
             stocks = [(args.sid, "Manual")]
         else:
-            # Batch analyze TSE list
             stocks = get_list("tse")
             logging.info(f"Starting batch analysis for {len(stocks)} stocks using {args.cores} cores...")
 
@@ -311,9 +411,8 @@ def main():
             for item in stocks:
                 analyzer.analyze_stock(item)
 
-        # Generate final HTML dashboard
         html_generator()
-        
+
     except Exception as e:
         logging.error(f"Main loop error: {e}")
 
