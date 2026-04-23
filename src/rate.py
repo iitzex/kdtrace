@@ -1,5 +1,7 @@
 import logging
+
 import pandas as pd
+
 from utils import get_list, get_request, setup_logger
 
 logger = logging.getLogger(__name__)
@@ -9,30 +11,39 @@ class YieldRateFetcher:
     
     URL = "https://stock.wespai.com/rate114"
     
+    REQUIRED_COLS = {"代號", "公司", "現金殖利率"}
+    OUTPUT_COLS = ["公司", "現金殖利率", "股價", "配息", "除息日", "發息日"]
+
     def fetch_data(self) -> pd.DataFrame:
-        """Fetches and parses the yield rate table."""
+        """抓取殖利率表；以 column name 找目標 table，table 結構變動時會失敗得很明確。"""
         logging.info(f"Fetching yield rate data from {self.URL}...")
         try:
-            # Using centralized request handler to handle potential SSL/connection issues
             response = get_request(self.URL)
             response.raise_for_status()
-            
-            # read_html returns a list of dataframes
-            frames = pd.read_html(response.text, index_col="代號")
+
+            frames = pd.read_html(response.text)
             if not frames:
                 logging.error("No tables found in the response.")
                 return pd.DataFrame()
-                
-            full_df = frames[0]
-            # Select and rename columns for clarity
-            cols = ["公司", "現金殖利率", "股價", "配息", "除息日", "發息日"]
-            df = full_df[[c for c in cols if c in full_df.columns]].copy()
-            
-            # Data cleaning: Convert generic "dividend" to per-thousand shares if needed
-            # In original: df.loc[:, "配息"] *= 1000
+
+            # 按 column name 找含必要欄位的 table，不再依賴 frames[0] 位置
+            target = next(
+                (f for f in frames if self.REQUIRED_COLS.issubset(set(f.columns))),
+                None,
+            )
+            if target is None:
+                logging.error(
+                    f"No table contains required columns {self.REQUIRED_COLS}; "
+                    f"available columns in first frame: {list(frames[0].columns)}"
+                )
+                return pd.DataFrame()
+
+            full_df = target.set_index("代號")
+            df = full_df[[c for c in self.OUTPUT_COLS if c in full_df.columns]].copy()
+
             if "配息" in df.columns:
                 df["配息"] = pd.to_numeric(df["配息"], errors='coerce') * 1000
-                
+
             return df
         except Exception as e:
             logging.error(f"Failed to fetch yield rate data: {e}")
