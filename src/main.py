@@ -5,6 +5,7 @@ import platform
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from multiprocessing import Pool
 from pathlib import Path
@@ -28,6 +29,49 @@ from utils import get_list, setup_logger
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class AppPaths:
+    data_dir: Path = Path("data")
+    json_dir: Path = Path("json")
+    pic_dir: Path = Path("pic")
+    stock_list_name: str = "tse"
+
+
+@dataclass
+class AnalysisResult:
+    sid: str
+    title: str
+    df_f: pd.DataFrame
+    df_ma: pd.DataFrame
+    df_daily: pd.DataFrame
+    df_weekly: pd.DataFrame
+    df_monthly: pd.DataFrame
+    df_revenue: pd.DataFrame
+    df_eps: pd.DataFrame
+    df_profitability: pd.DataFrame
+    df_investors: pd.DataFrame
+    price: float
+    eps4q_sum: float
+    begin_date: datetime
+
+    def to_plot_data(self) -> Dict[str, Any]:
+        return {
+            "df_f": self.df_f,
+            "df_ma": self.df_ma,
+            "df_daily": self.df_daily,
+            "df_weekly": self.df_weekly,
+            "df_monthly": self.df_monthly,
+            "df_revenue": self.df_revenue,
+            "df_eps": self.df_eps,
+            "df_profitability": self.df_profitability,
+            "df_investors": self.df_investors,
+            "price": self.price,
+            "eps4q_sum": self.eps4q_sum,
+            "begin_date": self.begin_date,
+        }
+
+
 class StockVisualizer:
     """股票分析圖表繪製的所有邏輯。"""
 
@@ -45,8 +89,11 @@ class StockVisualizer:
             return fm.FontProperties(fname=font_path, size=14)
         return fm.FontProperties(size=14)
 
-    def draw_report(self, sid: str, title: str, data: Dict[str, Any], output_path: str) -> Tuple[float, float]:
+    def draw_report(self, result: AnalysisResult, output_path: str) -> Tuple[float, float]:
         """繪圖與存檔；回傳 (plot_time, save_time) 以供 profiling。"""
+        sid = result.sid
+        title = result.title
+        data = result.to_plot_data()
         t_plot_start = time.perf_counter()
         fig = plt.figure(figsize=(26, 13))
         plt.subplots_adjust(top=0.92, bottom=0.08, left=0.10, right=0.95, hspace=0.15, wspace=0.25)
@@ -221,28 +268,94 @@ FETCH_CATEGORIES = ("revenue", "eps", "profitability", "investors", "info")
 class StockAnalyzer:
     """編排多支股票的分析流程。"""
 
-    def __init__(self, fetcher: CNYESFetcher, visualizer: StockVisualizer, force: bool = False):
+    def __init__(
+        self,
+        fetcher: CNYESFetcher,
+        visualizer: StockVisualizer,
+        force: bool = False,
+        paths: AppPaths = AppPaths(),
+    ):
         self.fetcher = fetcher
         self.visualizer = visualizer
         self.force = force
-        os.makedirs("pic", exist_ok=True)
+        self.paths = paths
+        self.paths.pic_dir.mkdir(exist_ok=True)
+
+    def _data_path(self, sid: str) -> Path:
+        return self.paths.data_dir / f"{sid}.csv"
+
+    def _json_cache_path(self, sid: str, category: str) -> Path:
+        return self.paths.json_dir / f"{sid}_{category}.json"
+
+    def _output_path(self, sid: str) -> Path:
+        return self.paths.pic_dir / f"{sid}.png"
 
     def _is_up_to_date(self, sid: str) -> bool:
         """若 pic/{sid}.png 的 mtime 晚於所有輸入（CSV + JSON cache）→ 可跳過重畫。"""
-        png = Path(f"pic/{sid}.png")
+        png = self._output_path(sid)
         if not png.exists():
             return False
         png_mtime = png.stat().st_mtime
 
-        data = Path(f"data/{sid}.csv")
+        data = self._data_path(sid)
         if not data.exists() or data.stat().st_mtime > png_mtime:
             return False
 
         for cat in FETCH_CATEGORIES:
-            j = Path(f"json/{sid}_{cat}.json")
+            j = self._json_cache_path(sid, cat)
             if not j.exists() or j.stat().st_mtime > png_mtime:
                 return False
         return True
+
+    def _read_price_data(self, sid: str) -> pd.DataFrame:
+        data_path = self._data_path(sid)
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data file for {sid} missing.")
+
+        df_f = pd.read_csv(data_path, index_col=0, parse_dates=True, date_format="%Y-%m-%d")
+        if df_f.empty:
+            raise ValueError(f"Data file for {sid} is empty.")
+        df_f = df_f.iloc[-255 * 5:]
+        df_f = df_f.apply(pd.to_numeric, errors="coerce")
+        return df_f
+
+    def _fetch_remote_data(self, sid: str) -> Dict[str, Any]:
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            future_map = {
+                "df_revenue": ex.submit(self.fetcher.get_revenue, sid),
+                "df_eps": ex.submit(self.fetcher.get_eps, sid),
+                "df_profitability": ex.submit(self.fetcher.get_profitability, sid),
+                "df_investors": ex.submit(self.fetcher.get_investors, sid),
+                "price": ex.submit(self.fetcher.get_price, sid),
+            }
+            return {name: future.result() for name, future in future_map.items()}
+
+    def _build_analysis_result(self, sid: str, title: str, df_f: pd.DataFrame, remote_data: Dict[str, Any]) -> AnalysisResult:
+        df_daily, df_weekly, df_monthly = kd(df_f)
+        df_ma = ma(df_f)
+
+        df_eps = remote_data["df_eps"]
+        eps4q_sum = df_eps.eps.head(4).sum() if not df_eps.empty else 0
+        num_days = min(300, len(df_f.index))
+        begin_date = df_f.index[-1].to_pydatetime() - timedelta(num_days)
+        begin_date = datetime(begin_date.year, begin_date.month, 1) - timedelta(1)
+
+        return AnalysisResult(
+            sid=sid,
+            title=title,
+            df_f=df_f,
+            df_ma=df_ma,
+            df_daily=df_daily,
+            df_weekly=df_weekly,
+            df_monthly=df_monthly,
+            df_revenue=remote_data["df_revenue"],
+            df_eps=df_eps,
+            df_profitability=remote_data["df_profitability"],
+            df_investors=remote_data["df_investors"],
+            price=remote_data["price"],
+            eps4q_sum=eps4q_sum,
+            begin_date=begin_date,
+        )
 
     def analyze_stock(self, items: Tuple[str, str]) -> Optional[Dict[str, float]]:
         """單支股票的完整流程；回傳每階段耗時（秒），用於 profiling。跳過時回傳 {'_skipped': 0.0}。"""
@@ -256,69 +369,83 @@ class StockAnalyzer:
         logging.info(f"Analyzing {sid} {title}...")
 
         try:
-            data_path = f"data/{sid}.csv"
-            if not os.path.exists(data_path):
-                logging.warning(f"Data file for {sid} missing.")
-                return None
-
             t = time.perf_counter()
-            df_f = pd.read_csv(data_path, index_col=0, parse_dates=True, date_format='%Y-%m-%d')
-            if df_f.empty:
-                return None
-            df_f = df_f.iloc[-255 * 5:]
-            df_f = df_f.apply(pd.to_numeric, errors="coerce")
+            df_f = self._read_price_data(sid)
             timings['read_csv'] = time.perf_counter() - t
 
-            # 5 個 CNYES endpoint 併發；每支股票打 5 條獨立檔案／endpoint，無共享寫入
             t = time.perf_counter()
-            with ThreadPoolExecutor(max_workers=5) as ex:
-                f_rev = ex.submit(self.fetcher.get_revenue, sid)
-                f_eps = ex.submit(self.fetcher.get_eps, sid)
-                f_prof = ex.submit(self.fetcher.get_profitability, sid)
-                f_inv = ex.submit(self.fetcher.get_investors, sid)
-                f_price = ex.submit(self.fetcher.get_price, sid)
-                df_rev = f_rev.result()
-                df_eps = f_eps.result()
-                df_prof = f_prof.result()
-                df_investors = f_inv.result()
-                price = f_price.result()
+            remote_data = self._fetch_remote_data(sid)
             timings['fetch_phase'] = time.perf_counter() - t
 
             t = time.perf_counter()
-            df_daily, df_weekly, df_monthly = kd(df_f)
-            df_ma = ma(df_f)
+            result = self._build_analysis_result(sid, title, df_f, remote_data)
             timings['indicators'] = time.perf_counter() - t
 
-            eps4q_sum = df_eps.eps.head(4).sum() if not df_eps.empty else 0
-            num_days = min(300, len(df_f.index))
-            begin_date = df_f.index[-1].to_pydatetime() - timedelta(num_days)
-            begin_date = datetime(begin_date.year, begin_date.month, 1) - timedelta(1)
-
-            plot_data = {
-                'df_f': df_f,
-                'df_ma': df_ma,
-                'df_daily': df_daily,
-                'df_weekly': df_weekly,
-                'df_monthly': df_monthly,
-                'df_revenue': df_rev,
-                'df_eps': df_eps,
-                'df_profitability': df_prof,
-                'df_investors': df_investors,
-                'price': price,
-                'eps4q_sum': eps4q_sum,
-                'begin_date': begin_date
-            }
-
-            output_file = f"pic/{sid}.png"
-            plot_time, save_time = self.visualizer.draw_report(sid, title, plot_data, output_file)
+            output_file = str(self._output_path(sid))
+            plot_time, save_time = self.visualizer.draw_report(result, output_file)
             timings['plot'] = plot_time
             timings['savefig'] = save_time
 
             return timings
 
+        except (FileNotFoundError, ValueError) as e:
+            logging.warning(str(e))
+            return None
         except Exception as e:
             logging.error(f"Unexpected error analyzing {sid}: {e}")
             return None
+
+
+class AnalysisService:
+    """管理分析模式、股票清單與執行策略。"""
+
+    def __init__(self, analyzer: StockAnalyzer, paths: AppPaths = AppPaths()):
+        self.analyzer = analyzer
+        self.paths = paths
+
+    def get_stocks(self, sid: Optional[str] = None, limit: Optional[int] = None) -> List[Tuple[str, str]]:
+        if sid:
+            stocks = [(sid, "Manual")]
+        else:
+            stocks = get_list(self.paths.stock_list_name)
+        if limit is not None:
+            return stocks[:limit]
+        return stocks
+
+    def run_profile(self, limit: int, reload_enabled: bool = False) -> None:
+        stocks = self.get_stocks(limit=limit)
+        cache_mode = "cold (reload=True)" if reload_enabled else "warm"
+        logging.info(f"Profiling {len(stocks)} stocks sequentially | cache={cache_mode}")
+        t0 = time.perf_counter()
+        samples = [t for t in (self.analyzer.analyze_stock(item) for item in stocks) if t]
+        wall = time.perf_counter() - t0
+        logging.info(f"Wall time: {wall:.2f}s | successful samples: {len(samples)}/{len(stocks)}")
+        _print_profile_report(samples)
+
+    def run_batch(self, stocks: List[Tuple[str, str]], cores: int) -> None:
+        if cores > 1:
+            with Pool(cores, initializer=_pool_worker_init) as p:
+                p.map(self.analyzer.analyze_stock, stocks)
+            return
+
+        for item in stocks:
+            self.analyzer.analyze_stock(item)
+
+
+class ReportService:
+    """管理靜態 HTML 報表輸出。"""
+
+    def __init__(self, stock_list_name: str = AppPaths().stock_list_name):
+        self.stock_list_name = stock_list_name
+
+    def generate_main_report(self) -> None:
+        if self.stock_list_name == "tse":
+            html_generator()
+            return
+
+        from gen_html import HtmlGenerator
+
+        HtmlGenerator().generate(self.stock_list_name)
 
 STAGE_ORDER = [
     'read_csv', 'fetch_phase', 'indicators', 'plot', 'savefig',
@@ -374,6 +501,27 @@ def _print_profile_report(samples: List[Dict[str, float]]):
     print("\n" + "\n".join(lines) + "\n")
 
 
+def _build_services(args: argparse.Namespace) -> Tuple[AppPaths, AnalysisService, ReportService]:
+    paths = AppPaths()
+    fetch_config = FetchConfig(reload=args.reload or args.force)
+    fetcher = CNYESFetcher(fetch_config)
+    visualizer = StockVisualizer()
+    analyzer = StockAnalyzer(fetcher, visualizer, force=args.force, paths=paths)
+    return paths, AnalysisService(analyzer, paths=paths), ReportService(stock_list_name=paths.stock_list_name)
+
+
+def _run_profile_mode(service: AnalysisService, args: argparse.Namespace) -> None:
+    service.run_profile(limit=args.profile, reload_enabled=args.reload or args.force)
+
+
+def _run_analysis_mode(service: AnalysisService, report_service: ReportService, args: argparse.Namespace) -> None:
+    stocks = service.get_stocks(sid=args.sid)
+    if not args.sid:
+        logging.info(f"Starting batch analysis for {len(stocks)} stocks using {args.cores} cores...")
+    service.run_batch(stocks, args.cores)
+    report_service.generate_main_report()
+
+
 def main():
     setup_logger()
     parser = argparse.ArgumentParser(description="KDTrace Stock Analysis Engine")
@@ -387,38 +535,14 @@ def main():
                         help="Force re-render (implies --reload to also refresh data cache)")
     args = parser.parse_args()
 
-    # --force 隱含 --reload：想重畫通常是懷疑資料有問題，讓 cache 也走 HTTP
-    fetch_config = FetchConfig(reload=args.reload or args.force)
-    fetcher = CNYESFetcher(fetch_config)
-    visualizer = StockVisualizer()
-    analyzer = StockAnalyzer(fetcher, visualizer, force=args.force)
+    _, analysis_service, report_service = _build_services(args)
 
     try:
         if args.profile:
-            stocks = get_list("tse")[:args.profile]
-            cache_mode = "cold (reload=True)" if args.reload else "warm"
-            logging.info(f"Profiling {len(stocks)} stocks sequentially | cache={cache_mode}")
-            t0 = time.perf_counter()
-            samples = [t for t in (analyzer.analyze_stock(item) for item in stocks) if t]
-            wall = time.perf_counter() - t0
-            logging.info(f"Wall time: {wall:.2f}s | successful samples: {len(samples)}/{len(stocks)}")
-            _print_profile_report(samples)
+            _run_profile_mode(analysis_service, args)
             return
 
-        if args.sid:
-            stocks = [(args.sid, "Manual")]
-        else:
-            stocks = get_list("tse")
-            logging.info(f"Starting batch analysis for {len(stocks)} stocks using {args.cores} cores...")
-
-        if args.cores > 1:
-            with Pool(args.cores, initializer=_pool_worker_init) as p:
-                p.map(analyzer.analyze_stock, stocks)
-        else:
-            for item in stocks:
-                analyzer.analyze_stock(item)
-
-        html_generator()
+        _run_analysis_mode(analysis_service, report_service, args)
 
     except Exception as e:
         logging.error(f"Main loop error: {e}")

@@ -28,6 +28,17 @@ uv run pytest                     | commit 前；9 tests < 1s
 uv run ruff check src/ tests/     | commit 前；E/F/I 規則
 ```
 
+## 後續建議（架構 / 品質）
+
+```
+item                                              | note
+明文化資料模型（PriceBar / RevenueSeries / EPS 等） | 降低隱含欄位約定；API 欄位漂移時較早失敗
+集中管理 settings / paths                         | data/json/pic/tse.csv/cache TTL/years_back 不再散落
+PNG 快取判斷從 mtime 升級到 metadata / hash       | 降低誤判，保留分析版本與輸入依賴
+HTML 卡片增加摘要資訊                             | 現價、近四季 EPS、最近營收 YOY、更新時間
+補批次可觀測性                                    | cache hit/miss、失敗分類、endpoint 耗時、成功率
+```
+
 ## 已完成（參考用）
 
 ### 本 session 架構與效能
@@ -66,6 +77,9 @@ commit    | summary
 7b0c8dd   | chore: Tier 2（--cores 預設、cache TTL、gen_list dry-run、filter 條件、del_wrong exit code、ruff）
 502f9c9   | test: utils smoke tests；rate.py 按 column name 選 table
 cc0e035   | docs: docstring 中英統一（9 檔）
+worktree  | P0: fetch/crawl 資料驗證 + indicator/crawl/html/main smoke tests（15 pass）
+worktree  | P1: main.py 抽出 AnalysisResult / AppPaths；分析與繪圖解耦（15 pass）
+worktree  | P2: AnalysisService / ReportService + CLI 模式分流（16 pass）
 ```
 
 ## 已延後 / 不做

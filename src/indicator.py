@@ -43,7 +43,7 @@ def kd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     ohlc_dict = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'}
     
     # Weekly KD
-    df_w = df.resample('W-Mon', label='left', closed='left').apply(ohlc_dict).dropna()
+    df_w = df.resample('W-MON', label='left', closed='left').apply(ohlc_dict).dropna()
     df_weekly = calc_kd(df_w, window=6, k_col='wk', d_col='wd')
     
     # Monthly KD

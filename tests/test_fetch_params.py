@@ -5,6 +5,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 
 from fetch import CNYESFetcher, FetchConfig
 
@@ -48,3 +49,26 @@ def test_investors_uses_to_ts():
     fetcher.get_investors("1101")
     params = fetcher._session.get.call_args.kwargs["params"]
     assert params["to"] == str(fetcher.to_ts), "investors 必須用 to_ts"
+
+
+def test_fetch_json_retries_on_retryable_http_error():
+    fetcher = CNYESFetcher(
+        FetchConfig(reload=True, cache_dir="/tmp/kdtrace_test_cache", max_retries=3, retry_backoff_seconds=0)
+    )
+    ok_resp = MagicMock()
+    ok_resp.raise_for_status.return_value = None
+    ok_resp.json.return_value = {"data": [{"time": [1], "eps": [1], "epsYOY": [2]}]}
+
+    retry_resp = MagicMock()
+    retry_resp.raise_for_status.side_effect = requests.HTTPError(
+        "502 Server Error",
+        response=MagicMock(status_code=502),
+    )
+
+    fetcher._session = MagicMock()
+    fetcher._session.get.side_effect = [retry_resp, ok_resp]
+
+    data = fetcher.fetch_json("1101", "https://example.com", {}, "eps")
+
+    assert data == {"data": [{"time": [1], "eps": [1], "epsYOY": [2]}]}
+    assert fetcher._session.get.call_count == 2

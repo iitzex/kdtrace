@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import pandas as pd
+import requests
 
 from utils import get_list, setup_logger
 from utils.http import get_session
@@ -27,6 +28,8 @@ class FetchConfig:
     reload: bool = True
     years_back: int = 5
     cache_ttl_seconds: int = 86400  # 24h
+    max_retries: int = 3
+    retry_backoff_seconds: float = 0.5
 
 class CNYESFetcher:
     """從 CNYES (marketinfo.api.cnyes.com) 抓財報資料的 client。"""
@@ -50,6 +53,53 @@ class CNYESFetcher:
     def _get_cache_path(self, sid: str, category: str) -> str:
         return os.path.join(self.config.cache_dir, f"{sid}_{category}.json")
 
+    def _validate_series_payload(
+        self, sid: str, category: str, stock_data: Dict[str, Any], required_keys: list[str]
+    ) -> bool:
+        times = stock_data.get("time")
+        if not isinstance(times, list) or not times:
+            logger.warning(f"{category} for {sid} missing or empty time series")
+            return False
+
+        expected_len = len(times)
+        for key in required_keys:
+            values = stock_data.get(key)
+            if not isinstance(values, list):
+                logger.warning(f"{category} for {sid} missing required list field: {key}")
+                return False
+            if len(values) != expected_len:
+                logger.warning(
+                    f"{category} for {sid} length mismatch: time={expected_len}, {key}={len(values)}"
+                )
+                return False
+        return True
+
+    def _finalize_dataframe(self, sid: str, category: str, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        df = df.sort_index()
+        if df.index.has_duplicates:
+            dup_count = int(df.index.duplicated().sum())
+            logger.warning(f"{category} for {sid} has {dup_count} duplicate timestamps; keeping last")
+            df = df[~df.index.duplicated(keep="last")]
+
+        df = df.apply(pd.to_numeric, errors="coerce")
+        if df.isna().all(axis=None):
+            logger.warning(f"{category} for {sid} became all-NaN after numeric coercion")
+            return pd.DataFrame()
+
+        df = df.dropna(how="all")
+        if df.empty:
+            logger.warning(f"{category} for {sid} has no valid numeric rows after cleanup")
+            return pd.DataFrame()
+
+        if not df.index.is_monotonic_increasing:
+            logger.warning(f"{category} for {sid} index is not monotonic after normalization")
+            return pd.DataFrame()
+
+        return df
+
     def fetch_json(self, sid: str, url: str, params: Dict[str, Any], category: str) -> Optional[Dict[str, Any]]:
         """抓 JSON；本地檔案快取，過期（預設 24h）或 reload 時走 HTTP。"""
         cache_path = self._get_cache_path(sid, category)
@@ -61,20 +111,46 @@ class CNYESFetcher:
                 is_stale = True
         
         if self.config.reload or not cache_exists or is_stale:
-            try:
-                response = self._session.get(url, params=params, headers=self.config.headers, timeout=15)
-                response.raise_for_status()
-                data = response.json()
+            for attempt in range(1, self.config.max_retries + 1):
+                try:
+                    response = self._session.get(url, params=params, headers=self.config.headers, timeout=15)
+                    response.raise_for_status()
+                    data = response.json()
 
-                # 原子寫入：write tmp → rename；避免 process 中途死掉留下半寫檔
-                tmp_path = cache_path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
-                os.replace(tmp_path, cache_path)
-                return data
-            except Exception as e:
-                logging.error(f"Failed to fetch {category} for {sid}: {e}")
-                return None
+                    # 原子寫入：write tmp → rename；避免 process 中途死掉留下半寫檔
+                    tmp_path = cache_path + ".tmp"
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=4)
+                    os.replace(tmp_path, cache_path)
+                    return data
+                except requests.HTTPError as e:
+                    status_code = e.response.status_code if e.response is not None else None
+                    is_retryable = status_code in {429, 500, 502, 503, 504}
+                    if attempt < self.config.max_retries and is_retryable:
+                        wait_seconds = self.config.retry_backoff_seconds * attempt
+                        logger.warning(
+                            f"Retryable HTTP error fetching {category} for {sid}: "
+                            f"status={status_code}, attempt={attempt}/{self.config.max_retries}, "
+                            f"sleep={wait_seconds:.1f}s"
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+                    logging.error(f"Failed to fetch {category} for {sid}: {e}")
+                    return None
+                except requests.RequestException as e:
+                    if attempt < self.config.max_retries:
+                        wait_seconds = self.config.retry_backoff_seconds * attempt
+                        logger.warning(
+                            f"Transient request error fetching {category} for {sid}: "
+                            f"attempt={attempt}/{self.config.max_retries}, sleep={wait_seconds:.1f}s, error={e}"
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+                    logging.error(f"Failed to fetch {category} for {sid}: {e}")
+                    return None
+                except Exception as e:
+                    logging.error(f"Failed to fetch {category} for {sid}: {e}")
+                    return None
         else:
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -83,12 +159,15 @@ class CNYESFetcher:
                 logging.error(f"Failed to read cache for {sid} {category}: {e}")
                 return None
 
-    def _to_dataframe(self, data: Optional[Dict[str, Any]], columns_map: Dict[str, str]) -> pd.DataFrame:
+    def _to_dataframe(self, sid: str, category: str, data: Optional[Dict[str, Any]], columns_map: Dict[str, str]) -> pd.DataFrame:
         """把 CNYES JSON 轉成 DataFrame，columns_map 是 {原始欄名: 新欄名}。"""
         if not data or "data" not in data or not data["data"]:
             return pd.DataFrame()
         
         stock_data = data["data"][0]
+        required_keys = ["time", *columns_map.keys()]
+        if not self._validate_series_payload(sid, category, stock_data, required_keys):
+            return pd.DataFrame()
         try:
             df_data = {new_name: stock_data[old_name] for old_name, new_name in columns_map.items()}
             df = pd.DataFrame(df_data, index=pd.to_datetime(stock_data["time"], unit="s"))
@@ -103,23 +182,26 @@ class CNYESFetcher:
         # CNYES 此 endpoint 的 `to` 是「起算點」（往後推 N 年），非「截止日」，需傳 base_ts
         params = {'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
         data = self.fetch_json(sid, url, params, "revenue")
-        return self._to_dataframe(data, {"revenue": "revenue", "revenueYOY": "revenueYOY"})
+        df = self._to_dataframe(sid, "revenue", data, {"revenue": "revenue", "revenueYOY": "revenueYOY"})
+        return self._finalize_dataframe(sid, "revenue", df)
 
     def get_profitability(self, sid: str) -> pd.DataFrame:
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/profitability/TWS:{sid}:STOCK'
         params = {'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
         data = self.fetch_json(sid, url, params, "profitability")
-        return self._to_dataframe(data, {
+        df = self._to_dataframe(sid, "profitability", data, {
             "grossMargin": "grossMargin",
             "operatingMargin": "operatingMargin",
             "profitMargin": "profitMargin"
         })
+        return self._finalize_dataframe(sid, "profitability", df)
 
     def get_eps(self, sid: str) -> pd.DataFrame:
         url = f'https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/eps/TWS:{sid}:STOCK'
         params = {'resolution': 'Q', 'year': str(self.config.years_back), 'to': f'{self.base_ts}'}
         data = self.fetch_json(sid, url, params, "eps")
-        return self._to_dataframe(data, {"eps": "eps", "epsYOY": "epsYOY"})
+        df = self._to_dataframe(sid, "eps", data, {"eps": "eps", "epsYOY": "epsYOY"})
+        return self._finalize_dataframe(sid, "eps", df)
 
     def get_price(self, sid: str) -> float:
         """抓現價；失敗回 -1.0。"""
@@ -138,14 +220,20 @@ class CNYESFetcher:
             return pd.DataFrame()
             
         stock_data = data["data"][0]
+        if not self._validate_series_payload(sid, "investors", stock_data, ["time", "volumeCharting"]):
+            return pd.DataFrame()
         try:
             chart_data = stock_data["volumeCharting"]
+            if not all(isinstance(item, dict) for item in chart_data):
+                logger.warning(f"investors for {sid} contains non-dict chart rows")
+                return pd.DataFrame()
             df = pd.DataFrame(chart_data)
             df.index = pd.to_datetime(stock_data["time"], unit="s")
             df.index.name = "date"
             # Keep only relevant columns
             valid_cols = ["foreignVolume", "domesticVolume", "dealerVolume", "totalVolume"]
-            return df[[c for c in valid_cols if c in df.columns]]
+            df = df[[c for c in valid_cols if c in df.columns]]
+            return self._finalize_dataframe(sid, "investors", df)
         except Exception as e:
             logging.error(f"Error parsing investor data for {sid}: {e}")
             return pd.DataFrame()

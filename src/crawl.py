@@ -52,6 +52,52 @@ class Crawler:
         """清除欄位中的逗號與空白。"""
         return [content.replace(",", "").strip() for content in row]
 
+    def _validate_tse_item(self, item: List[str], date_str: str) -> Optional[List[str]]:
+        """把 TWSE 原始列轉成可落盤的 row；格式異常時回 None。"""
+        if len(item) < 11:
+            logging.warning(f"Malformed TSE row for {date_str}: expected 11+ columns, got {len(item)}")
+            return None
+
+        stock_id = item[0].strip()
+        if not stock_id.isdigit():
+            logging.warning(f"Skip invalid stock id for {date_str}: {stock_id!r}")
+            return None
+
+        sign = "-" if "-" in item[9] else ""
+        row = self._clean_row([
+            date_str,
+            item[2][:-4] if len(item[2]) > 4 else "0",
+            item[4],
+            item[5],
+            item[6],
+            item[7],
+            item[8],
+            sign + item[10],
+            item[3],
+        ])
+
+        numeric_fields = {
+            "amount": row[1],
+            "volume": row[2],
+            "open": row[3],
+            "high": row[4],
+            "low": row[5],
+            "close": row[6],
+            "diff": row[7],
+            "number": row[8],
+        }
+        for field_name, value in numeric_fields.items():
+            if value in {"", "--", "----", "X", "除權息"}:
+                logging.warning(f"Skip {stock_id} on {date_str}: invalid {field_name}={value!r}")
+                return None
+            try:
+                float(value)
+            except ValueError:
+                logging.warning(f"Skip {stock_id} on {date_str}: non-numeric {field_name}={value!r}")
+                return None
+
+        return [stock_id, *row]
+
     def fetch_tse_data(self, date_str: str):
         """抓指定日期的上市股票資料並寫入 CSV。"""
         dstr = date_str.replace("-", "")
@@ -77,23 +123,11 @@ class Crawler:
                 return
 
             for item in tables[8].get('data', []):
-                # item[0]: stock_id, item[1]: name, 
-                # item[2]: 成交股數, item[4]: 成交金額
-                # item[5]: 開盤價, item[6]: 最高價, item[7]: 最低價, item[8]: 收盤價
-                # item[9]: 漲跌符號, item[10]: 漲跌價差, item[3]: 成交筆數
-                sign = "-" if "-" in item[9] else ""
-                row = self._clean_row([
-                    date_str,            # 日期
-                    item[2][:-4] if len(item[2]) > 4 else "0",  # 成交股數 (去除後四位，假設為仟股)
-                    item[4],             # 成交金額
-                    item[5],             # 開盤價
-                    item[6],             # 最高價
-                    item[7],             # 最低價
-                    item[8],             # 收盤價
-                    sign + item[10],     # 漲跌價差
-                    item[3],             # 成交筆數
-                ])
-                self.recorder.record(item[0], row)
+                validated = self._validate_tse_item(item, date_str)
+                if validated is None:
+                    continue
+                stock_id, *row = validated
+                self.recorder.record(stock_id, row)
         except Exception as e:
             logging.error(f"Error processing TSE data for {date_str}: {e}")
 
