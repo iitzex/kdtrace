@@ -29,7 +29,7 @@ from utils import get_list, setup_logger
 logger = logging.getLogger(__name__)
 
 class StockVisualizer:
-    """Handles all plotting logic for stock analysis."""
+    """股票分析圖表繪製的所有邏輯。"""
 
     def __init__(self):
         self.font = self._set_font()
@@ -219,7 +219,7 @@ FETCH_CATEGORIES = ("revenue", "eps", "profitability", "investors", "info")
 
 
 class StockAnalyzer:
-    """Orchestrates the analysis of multiple stocks."""
+    """編排多支股票的分析流程。"""
 
     def __init__(self, fetcher: CNYESFetcher, visualizer: StockVisualizer, force: bool = False):
         self.fetcher = fetcher

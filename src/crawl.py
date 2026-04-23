@@ -1,18 +1,18 @@
-import os
 import csv
 import logging
+import os
 import random
 import time
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import List, Optional
 
 from utils import get_request, setup_logger
 
 
 @dataclass
 class CrawlConfig:
-    """Configuration for the crawler."""
+    """爬蟲設定。"""
     prefix: str = "data"
     max_retries: int = 5
     min_sleep: int = 1
@@ -22,7 +22,7 @@ class CrawlConfig:
 
 
 class DataRecorder:
-    """Handles recording of crawled data to CSV files."""
+    """把爬到的資料寫入各股票的 CSV 檔。"""
 
     def __init__(self, prefix: str):
         self.prefix = prefix
@@ -30,7 +30,7 @@ class DataRecorder:
             os.makedirs(prefix)
 
     def record(self, stock_id: str, row: List[str]):
-        """Save a row to the corresponding stock's CSV file."""
+        """將一列資料 append 到對應股票的 CSV。"""
         file_path = os.path.join(self.prefix, f"{stock_id}.csv")
         file_exists = os.path.isfile(file_path)
         
@@ -42,18 +42,18 @@ class DataRecorder:
 
 
 class Crawler:
-    """Main crawler class for fetching stock data."""
+    """爬取股價資料的主類別。"""
 
     def __init__(self, config: Optional[CrawlConfig] = None):
         self.config = config or CrawlConfig()
         self.recorder = DataRecorder(self.config.prefix)
 
     def _clean_row(self, row: List[str]) -> List[str]:
-        """Clean comma and spaces from row contents."""
+        """清除欄位中的逗號與空白。"""
         return [content.replace(",", "").strip() for content in row]
 
     def fetch_tse_data(self, date_str: str):
-        """Fetch and record TSE data for a given date."""
+        """抓指定日期的上市股票資料並寫入 CSV。"""
         dstr = date_str.replace("-", "")
         url = self.config.tse_url_template.format(date=dstr)
 
@@ -98,20 +98,18 @@ class Crawler:
             logging.error(f"Error processing TSE data for {date_str}: {e}")
 
     def fetch_otc_data(self, date_str: str, date_str_tw: str):
-        """Fetch and record OTC data (currently placeholder as in original)."""
-        # Original code had this commented out or partially implemented.
-        # Leaving as hook for future implementation.
+        """上櫃資料抓取（尚未實作，保留 hook）。"""
         pass
 
     def crawl_date(self, dt: datetime):
-        """Crawl all data for a specific date."""
+        """抓指定日期的全部資料。"""
         date_str = dt.strftime("%Y-%m-%d")
         logging.info(f"Crawling {date_str}")
         self.fetch_tse_data(date_str)
 
 
 def get_latest_crawled_date(csv_path: str) -> Optional[datetime]:
-    """Determine the latest date already present in the reference CSV."""
+    """從參考 CSV 找出目前已爬到的最新日期。"""
     if not os.path.exists(csv_path):
         return None
     
@@ -133,7 +131,7 @@ def get_latest_crawled_date(csv_path: str) -> Optional[datetime]:
 
 
 def run():
-    """Main entry point for the crawler."""
+    """爬蟲 CLI 進入點。"""
     parser = argparse.ArgumentParser(description="KDTrace Stock Data Crawler")
     parser.add_argument("--begin", help="Begin date (YYYY-MM-DD)")
     parser.add_argument("--end", help="End date (YYYY-MM-DD)")

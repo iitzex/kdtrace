@@ -7,7 +7,7 @@ from utils import get_list, get_request, setup_logger
 logger = logging.getLogger(__name__)
 
 class YieldRateFetcher:
-    """Fetches stock yield rate information."""
+    """抓殖利率資訊。"""
     
     URL = "https://stock.wespai.com/rate114"
     

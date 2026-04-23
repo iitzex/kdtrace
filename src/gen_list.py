@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class StockInfo:
-    """Represents a single stock's basic information."""
+    """單一股票的基本資訊。"""
     sid: str
     name: str
 
@@ -23,7 +23,7 @@ class StockInfo:
 
 
 class StockListGenerator:
-    """Generates and maintains a list of active stocks from TWSE."""
+    """從 TWSE 抓並維護活躍股票清單。"""
 
     def __init__(self, data_dir: str = "data"):
         self.data_dir = data_dir
@@ -31,7 +31,7 @@ class StockListGenerator:
         # self.otc_url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
 
     def _parse_html(self, content: bytes) -> List[StockInfo]:
-        """Parses the ISIN HTML content to extract stock information."""
+        """解析 ISIN HTML 取出股票資訊。"""
         # Using lxml as the primary parser, falling back to html.parser if needed
         try:
             soup = BeautifulSoup(content.decode('Big5-HKSCS', errors='backslashreplace'), "lxml")
@@ -61,7 +61,7 @@ class StockListGenerator:
         return stocks
 
     def fetch_stock_list(self) -> List[StockInfo]:
-        """Fetches the latest stock list from the TSE website."""
+        """從 TSE 網站抓最新股票清單。"""
         logging.info(f"Fetching stock list from {self.tse_url}...")
         try:
             response = get_request(self.tse_url)
@@ -76,7 +76,7 @@ class StockListGenerator:
         return []
 
     def save_list(self, stocks: List[StockInfo], filename: str = "tse.csv") -> None:
-        """Saves the extracted stock list to a CSV file."""
+        """把股票清單寫入 CSV。"""
         logging.info(f"Writing {len(stocks)} entries to {filename}...")
         try:
             with open(filename, 'w', encoding='utf-8') as f:
@@ -86,7 +86,7 @@ class StockListGenerator:
             logging.error(f"Failed to write to {filename}: {e}")
 
     def cleanup_obsolete_data(self, current_stocks: List[StockInfo], dry_run: bool = False) -> None:
-        """Deletes CSV files in data_dir for stocks no longer in the current list.
+        """刪除 data_dir 裡已下市（不在 current_stocks）股票的 CSV。
 
         dry_run=True 只列出會被刪除的檔案，不實際刪除。
         """

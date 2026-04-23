@@ -1,17 +1,18 @@
 import logging
 import os
+
 from utils import get_list, setup_logger
 
 logger = logging.getLogger(__name__)
 
 class HtmlGenerator:
-    """Generates visual stock reports in HTML format with a premium look."""
+    """生成股票視覺化 HTML 報表。"""
 
     def __init__(self, output_dir: str = "."):
         self.output_dir = output_dir
 
     def _get_styles(self) -> str:
-        """Returns the base CSS styles for the report."""
+        """回傳報表的基礎 CSS。"""
         return """
         <style>
             :root {
@@ -128,7 +129,7 @@ class HtmlGenerator:
         """
 
     def generate(self, name: str):
-        """Generates an HTML report for the given stock list name."""
+        """為指定的股票清單生成 HTML 報表。"""
         file_path = os.path.join(self.output_dir, f"{name}.html")
         logging.info(f"Generating premium HTML report for {name.upper()} -> {file_path}")
         
@@ -192,7 +193,7 @@ class HtmlGenerator:
             logging.error(f"Failed to write HTML report: {e}")
 
 def html_generator():
-    """Convenience function for backward compatibility."""
+    """向後相容用的便利函式。"""
     generator = HtmlGenerator()
     generator.generate("tse")
 

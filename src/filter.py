@@ -17,7 +17,7 @@ def _pool_worker_init():
 
 
 class StockFilter:
-    """Filters stocks based on fundamental criteria with multiprocessing support."""
+    """依基本面條件篩選股票，支援多行程平行。"""
 
     def __init__(self, fetcher: CNYESFetcher, eps_threshold: float = 0.0,
                  rev_yoy_threshold: float = 0.0, window: int = 3):
@@ -28,7 +28,7 @@ class StockFilter:
         self.window = window
 
     def check_criteria(self, item: Tuple[str, str]) -> Optional[Tuple[str, str]]:
-        """Checks if a single stock meets the fundamental criteria."""
+        """檢查單一股票是否符合基本面條件；不符合或無資料回 None。"""
         sid, title = item
         try:
             df_rev = self.fetcher.get_revenue(sid)
@@ -50,7 +50,7 @@ class StockFilter:
         return None
 
     def run_screening(self, source_list: str = "tse", output_file: str = "filter.csv", cores: int = 1):
-        """Screens stocks and saves results to a CSV using multiple processes."""
+        """跑篩選並把結果寫成 CSV；cores>1 時用 Pool 平行。"""
         stocks = get_list(source_list)
         logging.info(f"Screening {len(stocks)} stocks from {source_list} using {cores} cores...")
         

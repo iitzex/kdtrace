@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FetchConfig:
-    """Configuration for the CNYES data fetcher."""
+    """CNYES 抓取器的設定。"""
     headers: Dict[str, str] = field(default_factory=lambda: {
         'accept': 'application/json, text/plain, */*',
         'accept-language': 'zh-TW,zh;q=0.7',
@@ -29,7 +29,7 @@ class FetchConfig:
     cache_ttl_seconds: int = 86400  # 24h
 
 class CNYESFetcher:
-    """Fetcher for financial data from CNYES (marketinfo.api.cnyes.com)."""
+    """從 CNYES (marketinfo.api.cnyes.com) 抓財報資料的 client。"""
 
     def __init__(self, config: FetchConfig = FetchConfig()):
         self.config = config
@@ -51,7 +51,7 @@ class CNYESFetcher:
         return os.path.join(self.config.cache_dir, f"{sid}_{category}.json")
 
     def fetch_json(self, sid: str, url: str, params: Dict[str, Any], category: str) -> Optional[Dict[str, Any]]:
-        """Fetches JSON data with local file caching support and 24h expiration."""
+        """抓 JSON；本地檔案快取，過期（預設 24h）或 reload 時走 HTTP。"""
         cache_path = self._get_cache_path(sid, category)
         
         cache_exists = os.path.exists(cache_path)
@@ -84,7 +84,7 @@ class CNYESFetcher:
                 return None
 
     def _to_dataframe(self, data: Optional[Dict[str, Any]], columns_map: Dict[str, str]) -> pd.DataFrame:
-        """Helper to convert CNYES JSON response to a clean pandas DataFrame."""
+        """把 CNYES JSON 轉成 DataFrame，columns_map 是 {原始欄名: 新欄名}。"""
         if not data or "data" not in data or not data["data"]:
             return pd.DataFrame()
         
@@ -122,7 +122,7 @@ class CNYESFetcher:
         return self._to_dataframe(data, {"eps": "eps", "epsYOY": "epsYOY"})
 
     def get_price(self, sid: str) -> float:
-        """Fetch current price. Returns -1.0 if failed."""
+        """抓現價；失敗回 -1.0。"""
         url = f'https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TWS:{sid}:STOCK?column=K,E,KEY,M,AI'
         data = self.fetch_json(sid, url, {}, "info")
         if data and "data" in data and data["data"]:

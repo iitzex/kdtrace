@@ -1,9 +1,10 @@
-import pandas as pd
-import numpy as np
 from typing import Tuple
 
+import pandas as pd
+
+
 def calc_kd(df: pd.DataFrame, window: int = 9, k_col: str = 'k', d_col: str = 'd') -> pd.DataFrame:
-    """Calculates Stochastic Oscillator (KD) indicators."""
+    """計算 KD 隨機指標。"""
     if df.empty:
         return pd.DataFrame(columns=[k_col, d_col])
 
@@ -25,7 +26,7 @@ def calc_kd(df: pd.DataFrame, window: int = 9, k_col: str = 'k', d_col: str = 'd
     return pd.concat([slowk, slowd], axis=1, keys=[k_col, d_col])
 
 def ma(df: pd.DataFrame, windows: Tuple[int, ...] = (5, 20, 60, 120, 250)) -> pd.DataFrame:
-    """Calculates multiple Moving Averages (MA)."""
+    """計算多個週期的移動平均線。"""
     if 'close' not in df.columns or df.empty:
         return pd.DataFrame()
         
@@ -34,7 +35,7 @@ def ma(df: pd.DataFrame, windows: Tuple[int, ...] = (5, 20, 60, 120, 250)) -> pd
     return pd.DataFrame(ma_dict, index=s.index)
 
 def kd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Provides KD indicators for Daily, Weekly, and Monthly frequencies."""
+    """回傳日 / 週 / 月 KD 三個頻率的指標。"""
     # Daily KD
     df_daily = calc_kd(df, window=9, k_col='k', d_col='d')
     

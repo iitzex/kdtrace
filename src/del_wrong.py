@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 
 def process_csv_files(data_dir: str = "data", mode: str = "trim",
                     count: int = 50, position: str = "last", stock_id: str = None) -> int:
-    """
-    Processes CSV files in data_dir based on the selected mode.
+    """依指定 mode 處理 data_dir 下的 CSV 檔。
+
     Modes:
-        - trim: Removes first or last N records.
-        - dedup: Removes duplicate date entries.
-        - sort: Sorts records by date chronologically.
-        - check: Scans for malformed rows (for debugging).
+        - trim: 刪除前/後 N 筆紀錄
+        - dedup: 去除重複日期
+        - sort: 依日期排序
+        - check: 掃描格式異常的列（除錯用）
+    check 模式回傳偵測到的異常列數，其他模式回傳 0。
     """
     path = Path(data_dir)
     if not path.is_dir():
