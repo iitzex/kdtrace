@@ -8,6 +8,12 @@ from gen_html import HtmlGenerator
 
 logger = logging.getLogger(__name__)
 
+
+def _pool_worker_init():
+    """spawn 模式下 worker 不會執行 main()，需在每個 worker 手動呼叫 setup_logger()。"""
+    setup_logger()
+
+
 class StockFilter:
     """Filters stocks based on fundamental criteria with multiprocessing support."""
 
@@ -46,8 +52,7 @@ class StockFilter:
         filtered_results = []
         
         if cores > 1:
-            with Pool(cores) as p:
-                # Filter results to remove None
+            with Pool(cores, initializer=_pool_worker_init) as p:
                 results = p.map(self.check_criteria, stocks)
                 filtered_results = [r for r in results if r is not None]
         else:

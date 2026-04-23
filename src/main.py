@@ -325,6 +325,11 @@ STAGE_ORDER = [
 ]
 
 
+def _pool_worker_init():
+    """spawn 模式下 worker 不會執行 main()，需在每個 worker 手動呼叫 setup_logger()。"""
+    setup_logger()
+
+
 def _print_profile_report(samples: List[Dict[str, float]]):
     """印 TOON 格式的 per-stage 統計表；分離 processed vs skipped。"""
     skipped = sum(1 for s in samples if '_skipped' in s)
@@ -405,7 +410,7 @@ def main():
             logging.info(f"Starting batch analysis for {len(stocks)} stocks using {args.cores} cores...")
 
         if args.cores > 1:
-            with Pool(args.cores) as p:
+            with Pool(args.cores, initializer=_pool_worker_init) as p:
                 p.map(analyzer.analyze_stock, stocks)
         else:
             for item in stocks:
