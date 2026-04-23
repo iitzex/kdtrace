@@ -1,9 +1,12 @@
-import re
-import os
+import argparse
 import logging
+import os
+import re
 from dataclasses import dataclass
 from typing import List, Set
+
 from bs4 import BeautifulSoup, Tag
+
 from utils import get_request, setup_logger
 
 logger = logging.getLogger(__name__)
@@ -63,7 +66,7 @@ class StockListGenerator:
         try:
             response = get_request(self.tse_url)
             if response.status_code == 200:
-                logging.info(f"Successfully fetched content (HTTP 200)")
+                logging.info("Successfully fetched content (HTTP 200)")
                 return self._parse_html(response.content)
             else:
                 logging.error(f"Failed to fetch content: HTTP {response.status_code}")
@@ -82,46 +85,67 @@ class StockListGenerator:
         except Exception as e:
             logging.error(f"Failed to write to {filename}: {e}")
 
-    def cleanup_obsolete_data(self, current_stocks: List[StockInfo]) -> None:
-        """Deletes CSV files in data_dir for stocks no longer in the current list."""
+    def cleanup_obsolete_data(self, current_stocks: List[StockInfo], dry_run: bool = False) -> None:
+        """Deletes CSV files in data_dir for stocks no longer in the current list.
+
+        dry_run=True 只列出會被刪除的檔案，不實際刪除。
+        """
         if not os.path.isdir(self.data_dir):
             logging.warning(f"Data directory '{self.data_dir}' does not exist. Skipping cleanup.")
             return
 
-        logging.info(f"Starting cleanup of obsolete data in '{self.data_dir}'...")
+        prefix = "[DRY-RUN] Would clean" if dry_run else "Starting cleanup of"
+        logging.info(f"{prefix} obsolete data in '{self.data_dir}'...")
         current_ids: Set[str] = {stock.sid for stock in current_stocks}
-        
+
         # Reference files that should never be deleted
         protected_files = {"0050"}
-        
+
         existing_files = [f for f in os.listdir(self.data_dir) if f.endswith(".csv")]
-        deleted_count = 0
-        
-        for file_name in existing_files:
-            sid = file_name.replace(".csv", "")
-            if sid not in current_ids and sid not in protected_files:
-                file_path = os.path.join(self.data_dir, file_name)
-                try:
-                    os.remove(file_path)
-                    deleted_count += 1
-                    logging.debug(f"Deleted obsolete data: {file_name}")
-                except Exception as e:
-                    logging.error(f"Error deleting {file_name}: {e}")
-        
-        if deleted_count > 0:
-            logging.info(f"Cleanup complete. Deleted {deleted_count} obsolete files.")
-        else:
+        target_files = [
+            f for f in existing_files
+            if f.replace(".csv", "") not in current_ids
+            and f.replace(".csv", "") not in protected_files
+        ]
+
+        if not target_files:
             logging.info("No obsolete files found.")
+            return
+
+        if dry_run:
+            logging.info(f"[DRY-RUN] {len(target_files)} files would be deleted:")
+            for f in target_files[:20]:
+                logging.info(f"  - {f}")
+            if len(target_files) > 20:
+                logging.info(f"  ... and {len(target_files) - 20} more")
+            return
+
+        deleted_count = 0
+        for file_name in target_files:
+            file_path = os.path.join(self.data_dir, file_name)
+            try:
+                os.remove(file_path)
+                deleted_count += 1
+                logging.debug(f"Deleted obsolete data: {file_name}")
+            except Exception as e:
+                logging.error(f"Error deleting {file_name}: {e}")
+
+        logging.info(f"Cleanup complete. Deleted {deleted_count} obsolete files.")
 
 
 def main():
     setup_logger()
+    parser = argparse.ArgumentParser(description="KDTrace Stock List Generator")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="List obsolete files without deleting them")
+    args = parser.parse_args()
+
     generator = StockListGenerator()
     stocks = generator.fetch_stock_list()
-    
+
     if stocks:
         generator.save_list(stocks, "tse.csv")
-        generator.cleanup_obsolete_data(stocks)
+        generator.cleanup_obsolete_data(stocks, dry_run=args.dry_run)
     else:
         logging.error("Failed to generate stock list. Aborting cleanup to prevent accidental data loss.")
 

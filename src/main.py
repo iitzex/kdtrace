@@ -1,17 +1,17 @@
-import os
-import time
-import platform
-import logging
 import argparse
+import logging
+import os
+import platform
 import statistics
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from multiprocessing import Pool
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 from pandas.plotting import register_matplotlib_converters
 
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -22,8 +22,8 @@ plt.rcParams['ytick.labelsize'] = 15
 register_matplotlib_converters()
 
 from fetch import CNYESFetcher, FetchConfig
-from indicator import kd, ma
 from gen_html import html_generator
+from indicator import kd, ma
 from utils import get_list, setup_logger
 
 logger = logging.getLogger(__name__)
@@ -377,7 +377,8 @@ def _print_profile_report(samples: List[Dict[str, float]]):
 def main():
     setup_logger()
     parser = argparse.ArgumentParser(description="KDTrace Stock Analysis Engine")
-    parser.add_argument("--cores", type=int, default=10, help="Number of CPU cores to use")
+    parser.add_argument("--cores", type=int, default=os.cpu_count() or 1,
+                        help="Number of CPU cores to use (default: all)")
     parser.add_argument("--reload", action="store_true", help="Force reload data from CNYES")
     parser.add_argument("--sid", help="Specific stock ID to analyze")
     parser.add_argument("--profile", type=int, metavar="N",

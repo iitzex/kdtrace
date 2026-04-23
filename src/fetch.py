@@ -1,10 +1,12 @@
-import time
 import json
-import os
 import logging
-import pandas as pd
-from typing import Dict, Any, Optional
+import os
+import time
 from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
+
+import pandas as pd
+
 from utils import get_list, setup_logger
 from utils.http import get_session
 
@@ -24,6 +26,7 @@ class FetchConfig:
     cache_dir: str = "json"
     reload: bool = True
     years_back: int = 5
+    cache_ttl_seconds: int = 86400  # 24h
 
 class CNYESFetcher:
     """Fetcher for financial data from CNYES (marketinfo.api.cnyes.com)."""
@@ -54,8 +57,7 @@ class CNYESFetcher:
         cache_exists = os.path.exists(cache_path)
         is_stale = False
         if cache_exists:
-            # Invalidate cache if older than 24 hours
-            if time.time() - os.path.getmtime(cache_path) > 86400:
+            if time.time() - os.path.getmtime(cache_path) > self.config.cache_ttl_seconds:
                 is_stale = True
         
         if self.config.reload or not cache_exists or is_stale:
@@ -164,10 +166,11 @@ def main():
         df_rev = fetcher.get_revenue(sid)
         df_prof = fetcher.get_profitability(sid)
         df_inv = fetcher.get_investors(sid)
-        
-        logging.info(f"  Done: Price={price}, EPS rows={len(df_eps)}")
-        # Example break or limit for testing if needed
-        # break 
+
+        logging.info(
+            f"  Done: Price={price}, EPS={len(df_eps)}, "
+            f"Rev={len(df_rev)}, Prof={len(df_prof)}, Inv={len(df_inv)}"
+        )
 
 if __name__ == "__main__":
     main()

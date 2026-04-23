@@ -1,5 +1,6 @@
-import logging
 import argparse
+import logging
+import sys
 from pathlib import Path
 from typing import Set
 
@@ -7,8 +8,8 @@ from utils import setup_logger
 
 logger = logging.getLogger(__name__)
 
-def process_csv_files(data_dir: str = "data", mode: str = "trim", 
-                    count: int = 50, position: str = "last", stock_id: str = None):
+def process_csv_files(data_dir: str = "data", mode: str = "trim",
+                    count: int = 50, position: str = "last", stock_id: str = None) -> int:
     """
     Processes CSV files in data_dir based on the selected mode.
     Modes:
@@ -20,17 +21,18 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
     path = Path(data_dir)
     if not path.is_dir():
         logging.error(f"Directory {data_dir} not found.")
-        return
+        return 0
 
     if stock_id:
         csv_files = [path / f"{stock_id}.csv"]
     else:
         csv_files = sorted(list(path.glob("*.csv")))
-        
+
     logging.info(f"Found {len(csv_files)} files. Mode: {mode.upper()}")
 
     processed_count = 0
     modified_count = 0
+    malformed_count = 0  # check 模式累加，最後回傳供 exit code 使用
 
     for file_path in csv_files:
         if not file_path.exists():
@@ -65,7 +67,8 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
                 deduped_data = []
                 for line in data_rows:
                     parts = line.split(",")
-                    if not parts or len(parts) < 1: continue
+                    if not parts or len(parts) < 1:
+                        continue
                     date_val = parts[0].strip()
                     if date_val not in seen_dates:
                         seen_dates.add(date_val)
@@ -78,9 +81,11 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
                 # Assuming Date is the first column in YYYY-MM-DD format
                 data_records = []
                 for line in data_rows:
-                    if not line.strip(): continue
+                    if not line.strip():
+                        continue
                     parts = line.split(",")
-                    if not parts: continue
+                    if not parts:
+                        continue
                     data_records.append(line)
                 
                 # Sort by date string (alphabetical sort works for YYYY-MM-DD)
@@ -92,10 +97,10 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
                     new_lines.extend(data_rows)
 
             elif mode == "check":
-                # Generic malformed detection
                 for i, line in enumerate(data_rows):
                     if "--" in line or ",0," in line or not line.strip():
                         logging.warning(f"Malformed at {file_path.name}:{i+2} -> {line.strip()}")
+                        malformed_count += 1
 
             # Save if changes were made
             if has_changes:
@@ -111,6 +116,9 @@ def process_csv_files(data_dir: str = "data", mode: str = "trim",
             logging.error(f"Error processing {file_path.name}: {e}")
 
     logging.info(f"Operation complete. Processed {processed_count} files, Modified {modified_count} files.")
+    if mode == "check":
+        logging.info(f"Check mode: {malformed_count} malformed row(s) detected.")
+    return malformed_count
 
 if __name__ == "__main__":
     setup_logger()
@@ -120,6 +128,10 @@ if __name__ == "__main__":
     parser.add_argument("--mode", choices=["trim", "dedup", "sort", "check"], default="trim", help="Action mode")
     parser.add_argument("--count", type=int, default=50, help="[Trim mode] Records to remove")
     parser.add_argument("--pos", choices=["first", "last"], default="last", help="[Trim mode] Position")
-    
+
     args = parser.parse_args()
-    process_csv_files(data_dir=args.dir, mode=args.mode, count=args.count, position=args.pos, stock_id=args.sid)
+    malformed = process_csv_files(data_dir=args.dir, mode=args.mode, count=args.count,
+                                  position=args.pos, stock_id=args.sid)
+    # check 模式：有 malformed 列時 exit 1，方便 CI / 自動化健康檢查
+    if args.mode == "check" and malformed > 0:
+        sys.exit(1)
