@@ -5,7 +5,8 @@ import logging
 import pandas as pd
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from utils import get_list, get_request, setup_logger
+from utils import get_list, setup_logger
+from utils.http import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class CNYESFetcher:
     def __init__(self, config: FetchConfig = FetchConfig()):
         self.config = config
         os.makedirs(self.config.cache_dir, exist_ok=True)
-        
+
         # Calculate standard timestamps
         self.to_ts = int(time.time())
         # The original code had a curious logic: int(time.time()) - 31536000 * 5
@@ -38,6 +39,10 @@ class CNYESFetcher:
         # However, looking at the original params, it set 'to' to 5 years ago.
         # I'll preserve the original logic but make it configurable if needed.
         self.base_ts = self.to_ts - 31536000 * self.config.years_back
+
+        # 重用 session：HTTP keep-alive 大幅減少 TCP/TLS 握手
+        # 同 process 內 5 threads 共用 session 是 thread-safe（純 GET）
+        self._session = get_session()
 
     def _get_cache_path(self, sid: str, category: str) -> str:
         return os.path.join(self.config.cache_dir, f"{sid}_{category}.json")
@@ -55,8 +60,7 @@ class CNYESFetcher:
         
         if self.config.reload or not cache_exists or is_stale:
             try:
-                # Using util.get_request which already handles some session-like behavior and SSL issues
-                response = get_request(url, params=params, headers=self.config.headers)
+                response = self._session.get(url, params=params, headers=self.config.headers, timeout=15)
                 response.raise_for_status()
                 data = response.json()
                 
