@@ -1,64 +1,79 @@
 # TODO
 
-## 優先 (待使用者執行)
+## 待決策（需使用者）
 
 ```
-task                                              | why
-uv run python src/main.py --cores 10 --force     | revenue/margins 修正後重畫所有 PNG
-停用 2pm 排程 (trig_01Fgmk7AZ3dNegqbfUyRzoqo)    | 事項本地已完成，已停用但建議從 claude.ai 確認
+item                                              | note
+push 到 GitHub                                    | 本地有 11 個未 push commits
+README 標 Python 3.12+，pyproject 要 3.14+        | 擇一修正；CLAUDE.md 預設 3.12
+從 claude.ai 確認 routine 已停                    | trig_01Fgmk7AZ3dNegqbfUyRzoqo（已 disable）
 ```
 
-## 已完成 ✓
-
-### Tier 1 — 真會咬人的
-```
-item                            | fix                                        | commit
-multiprocessing spawn logger    | Pool initializer 呼叫 setup_logger()      | 19746f7
-JSON cache 原子寫入             | tmp + os.replace                          | 3475e82
-revenue/profitability base_ts   | pytest mock session，4 tests pass         | 69c4515
---force 連動 --reload           | fetch_config.reload = reload or force     | 70ebe6d
-```
-
-### Tier 2 — 品質提升
-commit `7b0c8dd`：--cores 預設 `os.cpu_count()` / `FetchConfig.cache_ttl_seconds` / gen_list `--dry-run` / filter 條件可設定 / del_wrong `--mode check` exit 1 / ruff E/F/I（main.py E402 per-file ignore）。
-
-### Tier 3 — 基礎設施（OTC 跳過）
-commit `502f9c9`：
-- utils smoke tests (setup_logger idempotent / get_list / get_session / CustomHttpAdapter)
-- rate.py 按 column name 找 table（不再依賴 frames[0] 位置）
-
-### 效能（歷史）
-A1 savefig -tight（-40%）、A3 增量跳過、A4 ThreadPoolExecutor 併發（-54% cold）、CNYESFetcher requests.Session 重用（cold fetch_phase -33%）。
-
-### P3 — 文字整理
-commit `cc0e035`：docstring 中英統一（9 檔），行為未變。
-
-## 延後 / 不做
+## 已知問題（上游 / 外部，無需動作）
 
 ```
-item                                       | reason
-A2 plot 層 subplot 結構重整                | 潛在 -15% × 1067 支 / 10 cores ≈ -1.5s；不值 visual regression 風險
-OTC (tpex.org.tw) 支援                     | 使用者明示跳過
-fetch.py 5 個 get_* 改資料驅動             | 每 method 3-4 行；抽象成本 > 收益
-抽 parallel_map() 共用 Pool 樣板           | 只 2 個 caller；DRY 未痛
-```
-
-## 已知問題 (外部 / 上游)
-
-```
-issue                                                | impact           | action
-src/fetch.get_price 讀 column "21"                   | 取值依賴假設     | 查 CNYES 文件 / 實測欄位意義
+issue                                                | impact           | note
+src/fetch.get_price 讀 column "21"                   | 取值依賴假設     | CNYES 沒文件，實測可動但低價值
 stock 3454 的 investors CNYES 偶發 500               | 單支股票遺失圖   | 上游問題，容錯已處理
-README Python 3.12+ vs pyproject 3.14+ 不一致        | 文件不一致       | 需使用者決策
 ```
 
-## Ops
+## Ops 流程
 
 ```
-task                            | cadence
-crawl.py 每日更新                | 交易日每天跑一次（支援自動追趕缺漏日期）
-gen_list.py --dry-run 審視      | 每季跑一次，確認不會誤刪
-main.py                        | crawl 後跑；增量跳過會幫忙省時
-pytest                         | commit 前；目前 9 tests，< 1s
-ruff check src/ tests/         | commit 前
+task                              | cadence
+uv run python src/crawl.py        | 交易日每天；支援自動追趕缺漏日期
+uv run python src/gen_list.py --dry-run | 每季；先 dry-run 審視再真跑
+uv run python src/main.py --cores 10    | crawl 後；增量跳過 → 大多數時候近 0s
+uv run pytest                     | commit 前；9 tests < 1s
+uv run ruff check src/ tests/     | commit 前；E/F/I 規則
+```
+
+## 已完成（參考用）
+
+### 本 session 架構與效能
+
+```
+commit    | summary
+088fd8d   | refactor: utils/ 套件集中 logging（setup_logger 冪等）
+0645ccb   | chore: Python 程式搬到 src/
+b9c9d9a   | docs: README 路徑更新到 src/
+9ab86d9   | docs: KI/arch.md + KI/todo.md
+```
+
+### 效能優化（warm 14s → 0.x 秒增量；cold 40s → 18s）
+
+```
+commit    | summary                                                   | gain
+f197ec3   | perf: savefig -tight + ThreadPoolExecutor + 增量跳過       | -40% savefig / -54% cold fetch
+c3f0108   | perf: CNYESFetcher 重用 requests.Session                  | -33% cold fetch_phase
+```
+
+### 修正
+
+```
+commit    | summary
+996e3e1   | fix: revenue/profitability 用 base_ts（CNYES silent bug）
+19746f7   | fix: spawn worker 跑 setup_logger()（Pool initializer）
+3475e82   | fix: JSON cache 原子寫入 (tmp + os.replace)
+70ebe6d   | feat: --force 連動 --reload
+```
+
+### 品質 / 測試 / 文件
+
+```
+commit    | summary
+69c4515   | test: revenue/profitability base_ts smoke tests (4 pass)
+7b0c8dd   | chore: Tier 2（--cores 預設、cache TTL、gen_list dry-run、filter 條件、del_wrong exit code、ruff）
+502f9c9   | test: utils smoke tests；rate.py 按 column name 選 table
+cc0e035   | docs: docstring 中英統一（9 檔）
+```
+
+## 已延後 / 不做
+
+```
+item                                | reason
+A2 plot 層 subplot 結構重整         | 潛在 -1.5s × 全量；不值 visual regression 風險
+OTC (tpex.org.tw) 支援              | 使用者明示跳過
+fetch.py 5 個 get_* 改資料驅動      | 每 method 3-4 行；抽象成本 > 收益
+抽 parallel_map() 共用 Pool 樣板    | 只 2 個 caller；DRY 未痛
 ```
