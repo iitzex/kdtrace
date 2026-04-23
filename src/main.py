@@ -256,10 +256,13 @@ class StockVisualizer:
         
         if not df_prof.empty:
             p = ax.twinx()
-            # Amber tones for Margins
-            p.plot(df_prof.index, df_prof.get('grossMargin', []), color="#f59e0b", linewidth=2, label="Gross")
-            p.plot(df_prof.index, df_prof.get('operatingMargin', []), color="#fbbf24", linewidth=1.5, label="Op")
-            p.plot(df_prof.index, df_prof.get('profitMargin', []), color="#6366f1", linewidth=1, label="Net")
+            # Use clearly separated colors and a zero baseline for margin comparison.
+            p.axhline(0, color="#94a3b8", linestyle="--", linewidth=0.9, alpha=0.8, zorder=0)
+            p.plot(df_prof.index, df_prof.get('grossMargin', []), color="#f59e0b", linewidth=2.2, label="Gross")
+            p.plot(df_prof.index, df_prof.get('operatingMargin', []), color="#0ea5e9", linewidth=1.8, label="Op")
+            p.plot(df_prof.index, df_prof.get('profitMargin', []), color="#7c3aed", linewidth=1.8, label="Net")
+            p.legend(loc="upper left", frameon=False, fontsize=10)
+            p.yaxis.grid(True, linestyle='--', alpha=0.2)
         ax.get_xaxis().set_visible(False)
 
 FETCH_CATEGORIES = ("revenue", "eps", "profitability", "investors", "info")

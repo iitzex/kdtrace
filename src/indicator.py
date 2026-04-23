@@ -1,5 +1,6 @@
 from typing import Tuple
 
+import numpy as np
 import pandas as pd
 
 
@@ -51,3 +52,42 @@ def kd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df_monthly = calc_kd(df_m, window=6, k_col='mk', d_col='md')
     
     return df_daily, df_weekly, df_monthly
+
+
+def log_slope_r2(series: pd.Series, window: int) -> Tuple[float, float]:
+    """對 series 最近 window 個點取自然對數後做一次線性迴歸，回 (slope, R²)。
+
+    slope 是 log 空間的斜率，可視為每期的複合成長率近似。
+    資料不足、含非正值、或 flat 時回 (nan, nan)。
+    """
+    s = series.dropna().iloc[-window:]
+    if len(s) < max(4, window // 2):
+        return (float("nan"), float("nan"))
+    if (s <= 0).any():
+        return (float("nan"), float("nan"))
+
+    y = np.log(s.to_numpy(dtype=float))
+    x = np.arange(len(y), dtype=float)
+    slope, intercept = np.polyfit(x, y, 1)
+    y_pred = slope * x + intercept
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    if ss_tot <= 0:
+        return (float("nan"), float("nan"))
+    r2 = 1.0 - ss_res / ss_tot
+    return (float(slope), float(r2))
+
+
+def normalized_position(series: pd.Series, window: int) -> float:
+    """最近 window 個點中，當下值在 min~max 區間的相對位置 (0~1)，KD 風格。
+
+    資料 < 2 筆回 nan；區間退化為常數時回 0.5（中性）。
+    """
+    s = series.dropna().iloc[-window:]
+    if len(s) < 2:
+        return float("nan")
+    lo = float(s.min())
+    hi = float(s.max())
+    if hi - lo <= 0:
+        return 0.5
+    return float((s.iloc[-1] - lo) / (hi - lo))
