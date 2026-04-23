@@ -383,10 +383,11 @@ def main():
     parser.add_argument("--profile", type=int, metavar="N",
                         help="Profile first N stocks sequentially and print per-stage timing")
     parser.add_argument("--force", action="store_true",
-                        help="Force re-render even if pic/{sid}.png is up-to-date")
+                        help="Force re-render (implies --reload to also refresh data cache)")
     args = parser.parse_args()
 
-    fetch_config = FetchConfig(reload=args.reload)
+    # --force 隱含 --reload：想重畫通常是懷疑資料有問題，讓 cache 也走 HTTP
+    fetch_config = FetchConfig(reload=args.reload or args.force)
     fetcher = CNYESFetcher(fetch_config)
     visualizer = StockVisualizer()
     analyzer = StockAnalyzer(fetcher, visualizer, force=args.force)
