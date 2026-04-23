@@ -63,9 +63,12 @@ class CNYESFetcher:
                 response = self._session.get(url, params=params, headers=self.config.headers, timeout=15)
                 response.raise_for_status()
                 data = response.json()
-                
-                with open(cache_path, "w", encoding="utf-8") as f:
+
+                # 原子寫入：write tmp → rename；避免 process 中途死掉留下半寫檔
+                tmp_path = cache_path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=4)
+                os.replace(tmp_path, cache_path)
                 return data
             except Exception as e:
                 logging.error(f"Failed to fetch {category} for {sid}: {e}")
